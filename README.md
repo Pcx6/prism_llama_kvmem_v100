@@ -26,9 +26,9 @@ Release 资产 `prism_kvmem-v0.1.0-linux-sm70.tar.gz` 的 SHA256：`da4e917a2fdd
 
 
 本仓库是 Prism（qwen35 架构 27B 三值量化模型）的 llama.cpp 分支，把 KVMem 主机侧 KV 换页适配器编译进 Prism，并在此基础上完成：
-请求级检索 span 注入、短上下文短路、前缀复用、多模态视觉、以及生产部署 14803 的运维脚本。
+请求级检索 span 注入、短上下文短路、前缀复用、多模态视觉、以及生产部署 14802 的运维脚本。
 
-生产入口：`14803`（llama-server，KVMem + Vision，API 名 `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`）→ `14802`（trim_proxy.mjs，裁剪 tool 结果并转发）。
+生产入口：`14802`（llama-server 直连，KVMem + MTP + Vision，API 名 `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`）。2026-11-15 起原 `14803 -> 14802` 代理链路停用，14803 空闲；代理脚本与备份保留。
 
 > 2026-11-15：API 模型名已从 `Bonsai-2-27B` 改为 `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`（对应 GSQ IQ3_XXS-mtp 权重）。旧名不再作为别名返回，请更新客户端。
 
@@ -767,7 +767,7 @@ git push -u origin clean-main     # 分支名按需修改
 
 ## 18. 一键切换模型（2026-11-15）
 
-### 18.1 生产 14803
+### 18.1 生产 14802
 
 `/srv/llama_agent/start-llama-14803.sh [1|2]`
 
@@ -783,3 +783,10 @@ git push -u origin clean-main     # 分支名按需修改
 ### 18.2 公开一键脚本
 
 `deploy/quickstart.sh`（Release 资产同名）支持 1/2 选择、交互菜单、`bash -s -- N` 与 `MODEL_CHOICE`；模型缺失时从 Hugging Face 下载，`/srv/models` 已有文件时直接复用。
+
+### 18.3 端口调整（2026-11-15）
+
+- llama-server 从 `14803` 迁移到 `14802` 直连；`trim_proxy.mjs` 已停止，14803 不再监听。
+- 旧脚本备份：`/srv/llama_agent/start-llama-14803.sh.bak-port14803`；代理文件保留在 `/srv/harness_agent/trim_proxy.mjs`。
+- 客户端统一使用 `http://<host>:14802/v1`，模型名 `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`。
+- 若需恢复代理链路，先停 14802 的 llama-server，再按 4.2 节启动代理并把服务放回 14803。
