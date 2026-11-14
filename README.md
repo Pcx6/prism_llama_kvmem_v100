@@ -8,6 +8,15 @@
 curl -fL https://github.com/Pcx6/prism_llama_kvmem_v100/releases/download/v0.1.0/quickstart.sh | bash
 ```
 
+脚本会先让选择模型（也可直接传参）：
+
+| 选项 | 模型 | 说明 |
+|---|---|---|
+| `1`（默认） | Qwen3.8-27B GSQ IQ3_XXS | MTP + 视觉，短文本 decode 约 61 tok/s |
+| `2` | Ternary Bonsai 2 27B PTQ1_0 | 旧模型 + 视觉，decode 约 33-35 tok/s |
+
+非交互选择：`curl ... | bash -s -- 2`，或 `MODEL_CHOICE=2 ./quickstart.sh`。
+
 要求：Linux x86_64、NVIDIA **sm_70（V100）** 或兼容驱动、Python 3、约 8 GB 磁盘。
 脚本会下载二进制包（57 MB）与模型/视觉塔（约 6.2 GB），生成随机 API key，并在 `14803` 启动服务。
 自定义：`PORT=14803 API_KEY=my-key MODELS=/data/models curl ... | bash`。
@@ -753,3 +762,22 @@ git push -u origin clean-main     # 分支名按需修改
 结论：n-max 2 + q8_0 + 池 18432 最优；视觉同时开启不影响短文本速度。
 
 完整数据：`/srv/llama_agent/logs/final_bench.md`。
+
+## 18. 一键切换模型（2026-11-15）
+
+### 18.1 生产 14803
+
+`/srv/llama_agent/start-llama-14803.sh [1|2]`
+
+| 参数 | 模型 | KVMem 池 | 特性 |
+|---|---|---|---|
+| 1（默认） | Qwen3.8-27B GSQ IQ3_XXS-mtp + mmproj BF16 | 6144 + 12288 | MTP n-max 2、q8_0 KV、视觉、reasoning |
+| 2 | Ternary Bonsai 2 27B PTQ1_0 + mmproj Q8_0 | 12288 + 22528 | 无投机、视觉、reasoning |
+
+- 预览命令：`DRY_RUN=1 /srv/llama_agent/start-llama-14803.sh 1`
+- 环境变量选择：`MODEL_CHOICE=2 /srv/llama_agent/start-llama-14803.sh`
+- 备份：`.bak-qwen38`（MTP 配置）、`.bak-bonsai`（Bonsai 配置）
+
+### 18.2 公开一键脚本
+
+`deploy/quickstart.sh`（Release 资产同名）支持 1/2 选择、交互菜单、`bash -s -- N` 与 `MODEL_CHOICE`；模型缺失时从 Hugging Face 下载，`/srv/models` 已有文件时直接复用。
