@@ -1831,7 +1831,10 @@ private:
             // staging or retrieval: keep the native attention path only
             const int64_t n_predict = slot.task->params.n_predict;
             const int64_t n_reserve = n_predict > 0 ? n_predict : (int64_t) kp->gen_reserve;
-            slot.kvmem_short_bypass = kp->enabled && kvmem_threshold > 0 &&
+            const bool kvmem_has_spec = std::any_of(
+                    params_base.speculative.types.begin(), params_base.speculative.types.end(),
+                    [](common_speculative_type t) { return t != COMMON_SPECULATIVE_TYPE_NONE; });
+            slot.kvmem_short_bypass = kp->enabled && !kvmem_has_spec && kvmem_threshold > 0 &&
                     (int64_t) slot.task->n_tokens() + n_reserve < kvmem_threshold;
             // going back to the staged path: the previous short turn filled no host mirror,
             // so the first long turn must evaluate the whole prompt again
