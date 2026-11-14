@@ -28,7 +28,9 @@ Release 资产 `prism_kvmem-v0.1.0-linux-sm70.tar.gz` 的 SHA256：`da4e917a2fdd
 本仓库是 Prism（qwen35 架构 27B 三值量化模型）的 llama.cpp 分支，把 KVMem 主机侧 KV 换页适配器编译进 Prism，并在此基础上完成：
 请求级检索 span 注入、短上下文短路、前缀复用、多模态视觉、以及生产部署 14803 的运维脚本。
 
-生产入口：`14803`（llama-server，KVMem + Vision，API 名 `Bonsai-2-27B`）→ `14802`（trim_proxy.mjs，裁剪 tool 结果并转发）。
+生产入口：`14803`（llama-server，KVMem + Vision，API 名 `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`）→ `14802`（trim_proxy.mjs，裁剪 tool 结果并转发）。
+
+> 2026-11-15：API 模型名已从 `Bonsai-2-27B` 改为 `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`（对应 GSQ IQ3_XXS-mtp 权重）。旧名不再作为别名返回，请更新客户端。
 
 
 ## 0. 仓库说明与获取权重
@@ -103,7 +105,7 @@ set -a; . ./.env; set +a
 |---|---|
 | 模型 | `/srv/models/Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf`（10.4 GB，qwen35 hybrid GDN + MTP head，262144 ctx） |
 | 视觉塔 | `/srv/models/mmproj-Qwen3.8-27B-BF16.gguf`（931 MB，GPU offload） |
-| API 名称 | `Bonsai-2-27B`（启动参数 `-a Bonsai-2-27B`） |
+| API 名称 | `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`（启动参数 `-a`；旧别名 `Bonsai-2-27B` 已停用） |
 | KVMem | `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 12288`（GPU 池 18432 token，约 1.125 GiB） |
 | 短路阈值 | `0.95 x pool = 17510` token，低于此值走原生注意力快速路径 |
 | 显存 | 启动 12.57 GiB；226K 峰值 14.08 GiB / 16 GB（余 1.92 GiB） |
@@ -209,7 +211,7 @@ curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:14802/health   # 200
 # 5. 发请求
 curl -s http://127.0.0.1:14802/v1/chat/completions \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
-  -d '{"model":"Bonsai-2-27B","messages":[{"role":"user","content":"你好"}],"max_tokens":64}'
+  -d '{"model":"Qwen3.8-27B-GSQ-RCO-IQ3_XXS","messages":[{"role":"user","content":"你好"}],"max_tokens":64}'
 ```
 
 停止服务：`pgrep -a -x llama-server` 找到 pid 后 `kill -9`；代理同理按 LISTEN_PORT=14802 精确杀。
@@ -247,7 +249,7 @@ KEY=$API_KEY
 # 文本
 curl http://127.0.0.1:14802/v1/chat/completions \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
-  -d '{"model":"Bonsai-2-27B","messages":[{"role":"user","content":"你好"}],"max_tokens":64}'
+  -d '{"model":"Qwen3.8-27B-GSQ-RCO-IQ3_XXS","messages":[{"role":"user","content":"你好"}],"max_tokens":64}'
 
 # 视觉（base64 data URL）
 python3 docs/kvmem-prism/scripts/test_vision.py --port 14802 --key "$KEY" \
@@ -702,7 +704,7 @@ git push -u origin clean-main     # 分支名按需修改
 ### 16.1 最终配置
 
 - 模型：`/srv/models/Qwen3.8-27B-GSQ-RCO-IQ3_XXS.gguf`（10.1 GB，文本，无 mmproj）
-- 别名保留 `Bonsai-2-27B`，客户端无需改 model 字段
+- API 别名：`Qwen3.8-27B-GSQ-RCO-IQ3_XXS`（旧 `Bonsai-2-27B` 已停用，客户端需改 model 字段）
 - `-c 262144 -ngl 99 -t 24 -np 1 --reasoning on -ub 1024 -b 4096 -fa on --cache-reuse 256`
 - `--cache-ram 0 -ctxcp 0`
 - `--kvmem --kvmem-budget 8192 --kvmem-gen-reserve 12288 --kvmem-idle-ttl 86400`（池 20480 token，64 KiB/token ≈ 1.25 GiB，短路阈值 19456）
