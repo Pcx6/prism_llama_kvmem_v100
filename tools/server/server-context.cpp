@@ -1830,7 +1830,7 @@ private:
             // a request that fits entirely in the GPU pool needs no host mirror, capture,
             // staging or retrieval: keep the native attention path only
             const int64_t n_predict = slot.task->params.n_predict;
-            const int64_t n_reserve = n_predict > 0 ? n_predict : 0;
+            const int64_t n_reserve = n_predict > 0 ? n_predict : (int64_t) kp->gen_reserve;
             slot.kvmem_short_bypass = kp->enabled && kvmem_threshold > 0 &&
                     (int64_t) slot.task->n_tokens() + n_reserve < kvmem_threshold;
             // going back to the staged path: the previous short turn filled no host mirror,
