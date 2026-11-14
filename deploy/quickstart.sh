@@ -62,6 +62,13 @@ if [ -z "$MODELS" ]; then
   if [ -f "/srv/models/$MODEL_FILE" ]; then MODELS="/srv/models"; else MODELS="$DEST/models"; fi
 fi
 
+if [ "${DRY_RUN:-0}" = "1" ]; then
+  echo "[dry-run] model=$CHOICE repo=$REPO_ID"
+  echo "[dry-run] model_file=$MODELS/$MODEL_FILE"
+  echo "[dry-run] mmproj=$MODELS/$MMPROJ_FILE"
+  echo "[dry-run] alias=$ALIAS kv_budget=$KV_BUDGET kv_gen=$KV_GEN extra=${EXTRA[*]:-none}"
+  exit 0
+fi
 if [ ! -x "$DEST/bin/llama-server" ]; then
   echo "[quickstart] installing binaries to $DEST"
   mkdir -p "$DEST"
