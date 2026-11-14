@@ -788,5 +788,5 @@ git push -u origin clean-main     # 分支名按需修改
 
 - 现象：网页端输出到约 10K/3K token 停止，报 `Stream resume produced no new bytes`；服务端日志为 `Context size has been exceeded` / `failed to find a memory slot`，总 token 约 16-17K。
 - 原因：KVMem 池 18432（阈值 17510）；WebUI 默认 `max_tokens=-1`，旧短路判据只看 prompt，prompt < 17.5K 即走原生短路（无 host mirror）；prompt+生成超过池上限后无法继续分配 slot，流结束且 UI 续传拿到空。
-- 修复：`n_predict <= 0` 时按 `gen_reserve`（12288）预留；`prompt + 12288 >= 阈值` 改走 KVMem 分页路径，生成期间可换页。
-- 验证：15.3K prompt + 4K 生成 = 19308 token 无错误；6.3K prompt + 6.9K 生成 = 13.2K token，61 t/s；短请求仍触发 `KVMEM_SHORT_BYPASS`；8 轮 Agent 26.8 s。
+- 修复（2026-11-15 二次）：根因是 **MTP 投机解码 + 原生短路径** 的 batch 索引异常（`speculative batch index 1 is not inside the current sub-batch [0, 1)`），随后 KVMem 报 `block 448 has no GPU slot`、`Context size has been exceeded`。现在只要启用投机解码，就禁用原生短路，强制走 KVMem 分页路径；同时 `n_predict <= 0` 时按 `gen_reserve` 预留生成空间。
+- 验证：强制生成 12000 token（`ignore_eos`）成功，55.1 t/s，无 speculative/context 错误；8 轮 Agent 38.6 s（TTFT 29.0 s，decode 46.8 t/s）；短请求不再走短路（`KVMEM_SHORT_BYPASS` = 0）。
