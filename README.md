@@ -783,3 +783,10 @@ git push -u origin clean-main     # 分支名按需修改
 ### 18.2 公开一键脚本
 
 `deploy/quickstart.sh`（Release 资产同名）支持 1/2 选择、交互菜单、`bash -s -- N` 与 `MODEL_CHOICE`；模型缺失时从 Hugging Face 下载，`/srv/models` 已有文件时直接复用。
+
+### 17.4 长输出中断修复（2026-11-15）
+
+- 现象：网页端输出到约 10K/3K token 停止，报 `Stream resume produced no new bytes`；服务端日志为 `Context size has been exceeded` / `failed to find a memory slot`，总 token 约 16-17K。
+- 原因：KVMem 池 18432（阈值 17510）；WebUI 默认 `max_tokens=-1`，旧短路判据只看 prompt，prompt < 17.5K 即走原生短路（无 host mirror）；prompt+生成超过池上限后无法继续分配 slot，流结束且 UI 续传拿到空。
+- 修复：`n_predict <= 0` 时按 `gen_reserve`（12288）预留；`prompt + 12288 >= 阈值` 改走 KVMem 分页路径，生成期间可换页。
+- 验证：15.3K prompt + 4K 生成 = 19308 token 无错误；6.3K prompt + 6.9K 生成 = 13.2K token，61 t/s；短请求仍触发 `KVMEM_SHORT_BYPASS`；8 轮 Agent 26.8 s。
