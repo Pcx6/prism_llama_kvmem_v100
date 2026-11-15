@@ -109,7 +109,7 @@ set -a; . ./.env; set +a
 | KVMem | `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 18432`（GPU 池 24576 token，约 1.5 GiB） |
 | 短路阈值 | `0.95 x pool = 23347` token（启用投机解码时不走短路，见 17.4） |
 | 显存 | 启动约 13.1 GiB；长输出/Agent 峰值约 14.5 GiB / 16 GB |
-| 长文 | 117K 约 549 t/s，226K 约 535 t/s（换页开启） |
+| 长文 | 117K 约 549 t/s，226K 约 488 t/s（256K 上下文已验证，换页开启） |
 | 短请求 | 代码 700 token decode 61.1 t/s；8 轮 Agent 27.5 s（TTFT 17.9 s） |
 | 视觉 | OCR 正常（14802），TTFT 3.9 s，decode 65.2 t/s |
 | KV 空闲回收 | `--kvmem-idle-ttl 86400`（1 天）；到期释放 host KV，日志 `KVMEM_IDLE_EVICT` |
@@ -747,7 +747,7 @@ git push -u origin clean-main     # 分支名按需修改
 | 8 轮 Agent（14802） | 27.5 s，TTFT 17.9 s，后段 49-50 tok/s |
 | OCR（14802） | 文字正确，TTFT 3.9 s，65.2 tok/s |
 | 117K ORANGE 检索 | prefill 548.6 tok/s，decode 61.7 tok/s，正确返回 |
-| 226K | prefill 535.2 tok/s，峰值 14417 MiB，draft 在深上下文空闲 |
+| 226K | prefill 487.8 tok/s，峰值 14951 MiB，draft 在深上下文空闲 |
 | 断连 | GPU 立即 0%，slot 释放，后续 200 |
 
 ### 17.3 参数矩阵（700 token，T=0）
