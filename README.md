@@ -853,3 +853,22 @@ git push -u origin clean-main     # 分支名按需修改
 - 窗口模式 gen_reserve=12288，单次输出约 12K token 上限；需要 20K+ 长输出时用 `KV_PROFILE=long /srv/llama_agent/start-llama-14803.sh 1`（池 40960，decode 34.5）。
 - 窗口模式下游标超出 sink/window 的信息不可见，这是 StreamingLLM 的理论代价。
 - 视觉塔仍 GPU（OCR 正常），短文本/Agent 未退化。
+
+## 21. Window/Sink 扫描（三针基准，2026-11-15）
+
+语料：约 84827 token 纯文本，三个唯一暗号分别为 `SINK-PINEAPPLE-77`（开头）、`MIDDLE-DRAGON-88`（约 42K token）、`WINDOW-BANANA-99`（结尾）。固定 Sink=512、池 16384、MTP n-max 2、`--kvmem-method recency`，逐个重启 14805 测试。
+
+| 组 | Window | Prefill tok/s | Decode tok/s | 暗号数 | 显存峰值 MiB |
+|---|---|---|---|---|---|
+| A | 2048 | 571.3 / 574.5 / 573.4 | 55.01 / 55.07 / 54.93 | **3 / 3 / 3** | 13189 |
+| B | 4096 | 591.9 | 55.57 | 2 | 13189 |
+| C | 8192 | 591.7 | 55.56 | 2 | 13189 |
+| D | 16384 | 592.2 | 55.58 | 2 | 13189 |
+| E | 32768 | 593.2 | 55.56 | 2 | 13189 |
+
+结论：
+
+- 在 16K 池 + MTP 下，Window 从 2048 到 32768 **Decode 都在 55 t/s 左右**，窗口大小不再是速度变量；速度收益来自小池 + recency + MTP。
+- 质量呈非单调：2048 三次均准确列出三个暗号（含中间 42K），4096-32768 反而只列出 Sink 与 Window 两个。该现象与 KVMem 的 block 选择/驻留有关，已按实测数据选择 **Window 2048 + Sink 512**。
+- Sink 红线满足：所有组 `SINK-PINEAPPLE-77` 均命中。
+- 生产配置已是 A 组，无需改脚本；峰值 13.2 GiB。
