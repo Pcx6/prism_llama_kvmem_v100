@@ -3603,6 +3603,20 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_KVMEM_RECENT_TOKENS"));
     add_opt(common_arg(
+        {"--kv-window"}, "N",
+        string_format("newest tokens kept for attention/decode window (alias for --kvmem-recent-tokens, default: %d)", params.kvmem_recent_tokens),
+        [](common_params & params, int value) {
+            params.kvmem_recent_tokens = std::max(0, value);
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
+        {"--kv-sink"}, "N",
+        string_format("prefix tokens always kept as attention sinks (alias for --kvmem-sink-tokens, default: %d)", params.kvmem_sink_tokens),
+        [](common_params & params, int value) {
+            params.kvmem_sink_tokens = std::max(0, value);
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
         {"--kvmem-host-mib"}, "N",
         string_format("host KV quota in MiB, 0 = unlimited (default: %d)", params.kvmem_host_mib),
         [](common_params & params, int value) {
