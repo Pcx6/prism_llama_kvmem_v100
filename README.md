@@ -793,3 +793,26 @@ git push -u origin clean-main     # 分支名按需修改
 - 追加（2026-11-15）：`gen_reserve` 从 12288 提高到 **18432**（池 24576），解决生成阶段 slot 容量不足；经 14802 实测 12000 token 输出成功（54.8 t/s），16K 测试也通过（54.1 t/s），无 `no GPU slot` / `Context size exceeded`。
 - 再次追加：18000 token 级 prompt + 12000 token 输出仍会撞到 22.5K 级 slot 上限；`gen_reserve` 进一步提升到 **26624**（池 32768）。经 14802 实测 16202 prompt + 12000 输出 = 28202 token 成功（33.4 t/s），无 slot/context 错误；256K prompt 仍可正常预填（487.8 t/s）。
 - 2026-11-15 最终：22000 token 级输出仍会撞 22K slot 上限；`gen_reserve` 提升到 **34816**（池 40960，约 2.5 GiB）。实测 25000 token 输出成功（55.3 t/s），视觉 GPU 正常（OCR 6.8 s），峰值 14785 MiB。
+
+## 19. 128K Decode 调优（双路 Xeon 6146 / DDR4-2133 / V100，2026-11-15）
+
+测试方法：128K prompt（106254 token），生成 128 token，取 `predicted_per_second`；所有配置均重跑 prefill+decode。
+
+| 配置 | Decode tok/s | Prefill tok/s | 峰值 MiB |
+|---|---|---|---|
+| 基线（现有生产） | 34.48 | 446.6 | 14873 |
+| taskset node0 CPU | 34.51 | 446.8 | 14873 |
+| + `--no-mmap` | 34.61 | 447.8 | 14875 |
+| + 视觉塔 CPU | 34.61 | 448.0 | 13735 |
+| 池 57344 + 视觉 CPU | 33.93 | 368.9 | 14453 |
+| 池 65536 + 视觉 CPU | 34.07 | 360.2 | 14727 |
+| 关闭 MTP | 34.52 | 386.8 | 13313 |
+| MTP n-max 1 | 34.34 | 361.6 | 14577 |
+
+结论：
+
+- 128K Decode 稳定在 **34.3-34.6 tok/s**，瓶颈是 V100 上 27B 模型的长上下文 attention/带宽，不是 NUMA、池大小或 MTP；扩大池只降低 prefill（hash/换页开销）。
+- **Docker 内无法使用 NUMA 策略**：`numactl --cpunodebind/--membind` 返回 `This system does not support NUMA policy`；只能 `taskset` 绑定 node0 CPU（0-11,24-35），对 GPU decode 无可见收益（prefill +0.2 t/s）。
+- `--no-mmap` 在本 fork 已标记 deprecated，收益在噪声范围内，最终生产未启用。
+- `--kv-evict-sink/window`（PR #27583）在本 fork 中不存在，未移植；如需要需单独打补丁。
+- 最终生产保留视觉塔 GPU（OCR 6.8 s），池 40960，MTP n-max 2；启动脚本加 `taskset -c 0-11,24-35`。
