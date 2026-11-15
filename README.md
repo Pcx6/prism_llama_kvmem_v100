@@ -816,3 +816,40 @@ git push -u origin clean-main     # 分支名按需修改
 - `--no-mmap` 在本 fork 已标记 deprecated，收益在噪声范围内，最终生产未启用。
 - `--kv-evict-sink/window`（PR #27583）在本 fork 中不存在，未移植；如需要需单独打补丁。
 - 最终生产保留视觉塔 GPU（OCR 6.8 s），池 40960，MTP n-max 2；启动脚本加 `taskset -c 0-11,24-35`。
+
+## 20. KVMem 窗口驱逐与 128K Decode（2026-11-15）
+
+### 20.1 1Cat-vLLM 源码审计
+
+克隆 `1CatAI/1Cat-vLLM`（204 MB，depth 1）检查后确认：
+
+- 没有通用的 `--kv-evict-sink/window` / StreamingLLM 实现；`vllm/config/sm70_sparse.py` 是 QSA/indexer 等**模型原生稀疏注意力**策略，只对支持该结构的模型生效。
+- 其 V100 长文加速主要来自 SM70 attention kernel、XQA/page4、split-K 等，移植成本高，且不适用于 Qwen3.8 的 dense/GDN 结构。
+- 因此改在现有 KVMem 上做窗口驱逐，不引入 1Cat 的滑动注意力。
+
+### 20.2 KVMem 原生窗口
+
+新增 CLI 别名（映射到 KVMem sink/recent 策略）：
+
+- `--kv-window N` = `--kvmem-recent-tokens N`：保留最近 N token
+- `--kv-sink N` = `--kvmem-sink-tokens N`：保留开头 N 个 attention sink
+- 配合 `--kvmem-method recency` 与池 16384（budget 4096 + gen 12288）
+
+### 20.3 128K Decode 结果（106254 prompt，生成 128）
+
+| 配置 | Decode tok/s | Prefill tok/s | 备注 |
+|---|---|---|---|
+| 旧全注意力 + 池 40960 | 34.5 | 446 | MTP 深上下文空闲 |
+| 池 16384 retrieval（偶发 draft 错误） | 54.4 | 566 | 不稳定，draft_impl 报错 |
+| recency + window 8192 / sink 1024 | 46.5 | 598 | 稳定，质量通过 |
+| recency + window 4096 | 46.4 | 599 | 稳定 |
+| recency + window 2048 / sink 512 | **50.2** | 587 | 稳定，质量通过 |
+| recency n-max 3 | 45.1 | 598 | 更慢 |
+
+质量验证（100K 文档）：开头 sink `ORANGE-FALCON-42` 与结尾 window `BLUE-MONKEY-99` 均正确回答；96K prompt 下 decode 55.1 t/s，无 `draft_impl` / slot 错误。
+
+### 20.4 取舍
+
+- 窗口模式 gen_reserve=12288，单次输出约 12K token 上限；需要 20K+ 长输出时用 `KV_PROFILE=long /srv/llama_agent/start-llama-14803.sh 1`（池 40960，decode 34.5）。
+- 窗口模式下游标超出 sink/window 的信息不可见，这是 StreamingLLM 的理论代价。
+- 视觉塔仍 GPU（OCR 正常），短文本/Agent 未退化。
