@@ -106,9 +106,9 @@ set -a; . ./.env; set +a
 | 模型 | `/srv/models/Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf`（10.4 GB，qwen35 hybrid GDN + MTP head，262144 ctx） |
 | 视觉塔 | `/srv/models/mmproj-Qwen3.8-27B-BF16.gguf`（931 MB，GPU offload） |
 | API 名称 | `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`（启动参数 `-a`；旧别名 `Bonsai-2-27B` 已停用） |
-| KVMem | `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 12288`（GPU 池 18432 token，约 1.125 GiB） |
-| 短路阈值 | `0.95 x pool = 17510` token，低于此值走原生注意力快速路径 |
-| 显存 | 启动 12.57 GiB；226K 峰值 14.08 GiB / 16 GB（余 1.92 GiB） |
+| KVMem | `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 18432`（GPU 池 24576 token，约 1.5 GiB） |
+| 短路阈值 | `0.95 x pool = 23347` token（启用投机解码时不走短路，见 17.4） |
+| 显存 | 启动约 13.1 GiB；长输出/Agent 峰值约 14.5 GiB / 16 GB |
 | 长文 | 117K 约 549 t/s，226K 约 535 t/s（换页开启） |
 | 短请求 | 代码 700 token decode 61.1 t/s；8 轮 Agent 27.5 s（TTFT 17.9 s） |
 | 视觉 | OCR 正常（14802），TTFT 3.9 s，decode 65.2 t/s |
@@ -735,7 +735,7 @@ git push -u origin clean-main     # 分支名按需修改
 
 - 模型：`Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf`（含 nextn MTP head）+ `mmproj-Qwen3.8-27B-BF16.gguf`
 - `--spec-type draft-mtp --spec-draft-n-max 2`；`--cache-type-k q8_0 --cache-type-v q8_0`
-- `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 12288`（池 18432，短路阈值 17510）
+- `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 18432`（池 24576，短路阈值 23347）
 - `--reasoning on` 全程保留；`-c 262144 -fa on -ub 1024 -b 4096`
 - 回滚：`cp /srv/llama_agent/start-llama-14803.sh.bak-qwen38 /srv/llama_agent/start-llama-14803.sh`
 
@@ -790,3 +790,4 @@ git push -u origin clean-main     # 分支名按需修改
 - 原因：KVMem 池 18432（阈值 17510）；WebUI 默认 `max_tokens=-1`，旧短路判据只看 prompt，prompt < 17.5K 即走原生短路（无 host mirror）；prompt+生成超过池上限后无法继续分配 slot，流结束且 UI 续传拿到空。
 - 修复（2026-11-15 二次）：根因是 **MTP 投机解码 + 原生短路径** 的 batch 索引异常（`speculative batch index 1 is not inside the current sub-batch [0, 1)`），随后 KVMem 报 `block 448 has no GPU slot`、`Context size has been exceeded`。现在只要启用投机解码，就禁用原生短路，强制走 KVMem 分页路径；同时 `n_predict <= 0` 时按 `gen_reserve` 预留生成空间。
 - 验证：强制生成 12000 token（`ignore_eos`）成功，55.1 t/s，无 speculative/context 错误；8 轮 Agent 38.6 s（TTFT 29.0 s，decode 46.8 t/s）；短请求不再走短路（`KVMEM_SHORT_BYPASS` = 0）。
+- 追加（2026-11-15）：`gen_reserve` 从 12288 提高到 **18432**（池 24576），解决生成阶段 slot 容量不足；经 14802 实测 12000 token 输出成功（54.8 t/s），16K 测试也通过（54.1 t/s），无 `no GPU slot` / `Context size exceeded`。
