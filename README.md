@@ -843,10 +843,10 @@ git push -u origin clean-main     # 分支名按需修改
 | 池 16384 retrieval（偶发 draft 错误） | 54.4 | 566 | 不稳定，draft_impl 报错 |
 | recency + window 8192 / sink 1024 | 46.5 | 598 | 稳定，质量通过 |
 | recency + window 4096 | 46.4 | 599 | 稳定 |
-| recency + window 2048 / sink 512 | **50.2** | 587 | 稳定，质量通过 |
+| recency + window 2048 / sink 512 | **52.2**（生产 14802） | 584 | 稳定，质量通过 |
 | recency n-max 3 | 45.1 | 598 | 更慢 |
 
-质量验证（100K 文档）：开头 sink `ORANGE-FALCON-42` 与结尾 window `BLUE-MONKEY-99` 均正确回答；96K prompt 下 decode 55.1 t/s，无 `draft_impl` / slot 错误。
+质量验证（100K 文档）：开头 sink `ORANGE-FALCON-42` 与结尾 window `BLUE-MONKEY-99` 均正确回答；96K prompt 下 decode 55.1 t/s，无 `draft_impl` / slot 错误。 生产回归：OCR 7.9 s 正确；8 轮 Agent 31.2 s（TTFT 21.2 s，decode 47.3 t/s）；显存 12.9 GiB。
 
 ### 20.4 取舍
 
