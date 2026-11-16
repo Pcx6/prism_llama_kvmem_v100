@@ -911,3 +911,30 @@ KVMem 换页在四种精度下均无 hole/段错误。
 - 高吞吐：16K 窗口 41.7 tok/s，但丢中间记忆；2K 窗口 52 tok/s，仅适合短记忆任务。
 - 生产默认改为 **256k profile**：`--kvmem-budget 8192 --kvmem-gen-reserve 4096`、q8_0/q8_0、无窗口；经 14802 实测 250K prompt 261503 token，prefill 588.9、decode 34.2 t/s，三暗号全中，无错误。
 - 保留 `KV_PROFILE=fast`（window 2048，52 t/s）与 `KV_PROFILE=long`（池 40960，长输出）。
+
+## 23. FP8 KV 支持尝试（2026-11-17，未上线）
+
+目标：KV Cache 用 FP8 E4M3 存储（1 byte/element），attention 时反量化到 FP16，走 V100 原生 FP16 tensor core。
+
+已实现的原型（已回滚，未进入 main）：
+
+- `GGML_TYPE_FP8_E4M3 = 145`，block=1，type_size=1；CPU `quantize_row_fp8_e4m3_ref` / `dequantize_row_fp8_e4m3`（含 E4M3 编码/解码与饱和）。
+- type traits、`ggml_quantize_chunk`、CPU `type_traits_cpu.from_float`、`--cache-type-k/v fp8_e4m3` 解析。
+- CUDA：`f32<->fp8` copy kernel、`fp8->f16/f32` dequant dispatch、`SET_ROWS` 量化写入、`ggml_cuda` SET_ROWS supports_op。
+- 模型可完成加载阶段，但首次 decode 崩溃。
+
+阻塞点（gdb 回溯）：
+
+```
+SIGSEGV at 0x0
+#1 ggml_compute_forward_flash_attn_ext (libggml-cpu.so)
+#2 ggml_graph_compute_thread
+```
+
+1. CUDA 侧 FlashAttention 没有 FP8 的 K/V 模板实例（`fattn-mma-f16` 只有 F16/Q4_0/Q8_0 的 `type_KV`），scheduler 因此把 attention 回退到 CPU。
+2. CPU FlashAttention 需要 FP8 的 `vec_dot`/类型支持，当前为空函数指针，直接段错误。
+3. 要补齐需新增 FP8 的 FA tile loader（32 字节/块反量化到 half）以及整套 `fattn-mma-f16-instance-fp8_0-*` 模板实例，属于多小时的 kernel 工程。
+
+性能判断：V100 sm70 无 FP8 硬件，所有路径都要软件反量化；此前 q4_0 KV 已因反量化比 q8_0 慢（32.5 vs 34.0 t/s），FP8 预计同样不会提速，只会增加复杂度。
+
+结论：**不部署 FP8**；生产保持 `q8_0/q8_0` 全注意力 256K（约 34.2 t/s，三暗号 3/3）。如后续确需 FP8，先补 CUDA FA FP8 实例并做 dequant 开销评估。
