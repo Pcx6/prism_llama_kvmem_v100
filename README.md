@@ -939,3 +939,39 @@ SIGSEGV at 0x0
 性能判断：V100 sm70 无 FP8 硬件，所有路径都要软件反量化；此前 q4_0 KV 已因反量化比 q8_0 慢（32.5 vs 34.0 t/s），FP8 预计同样不会提速，只会增加复杂度。
 
 结论：**不部署 FP8**；生产保持 `q8_0/q8_0` 全注意力 256K（约 34.2 t/s，三暗号 3/3）。如后续确需 FP8，先补 CUDA FA FP8 实例并做 dequant 开销评估。
+
+## 24. 根因剖析：计算、HBM 还是主机内存（2026-11-17）
+
+测试条件：Qwen3.8-27B IQ3_XXS + MTP，V100 16GB，q8_0/q8_0 KV，全注意力，池 40960（除注明），生成 256 token，nvidia-smi 每 0.5 s 采样，取 decode 窗口平均。
+
+| 场景 | Decode tok/s | Draft | GPU util | HBM util | 功耗 W |
+|---|---|---|---|---|---|
+| 2K 上下文，关闭 MTP | 36.7 | 0 | 98.1% | 53.3% | 272 |
+| 2K 上下文，MTP | 51.4 | 134/241 | 78.3% | 39.0% | 229 |
+| 16K，MTP | 35.3 | 0 | 92.3% | 51.9% | 266 |
+| 64K，MTP | 35.3 | 0 | 93.2% | 52.0% | 275 |
+| 106K，MTP | 35.1 | 0 | 93.0% | 51.7% | 270 |
+| 106K，池 16384，MTP | 54.9 | 145/218 | 82.0% | 40.7% | 244 |
+| 250K，q8/q8 全注意力 | 34.2 | 0 | — | — | — |
+| 250K，f16/f16 全注意力 | 34.5 | 0 | — | — | — |
+| 250K，q4_0/q8 | 32.5 | 0 | — | — | — |
+
+模型 9.8 GB；35 tok/s 时权重读取约 343 GB/s，加 40K resident KV（约 2.5 GiB）约 94 GB/s，合计约 437 GB/s ≈ V100 HBM 峰值（900 GB/s）的 48%，与 `utilization.memory` 52% 吻合。MTP 55 tok/s 时每个 target step 摊到约 1.6 个输出 token，权重+KV 总带宽仍在 430-450 GB/s 量级。
+
+结论：
+
+1. **不是 VRAM 带宽打满**：HBM 利用率仅约 52%，且 KV 从 q8_0 换成 f16（KV 字节翻倍）decode 几乎不变（34.0 vs 34.5），q4_0 反而更慢（32.5）。说明 decode 不靠 KV 字节带宽，KV 量化不会提速。
+2. **不是主机 DDR4 带宽**：KVMem 的 offload/retrieval 只发生在 prefill 和 prefill 结束，decode 期间 resident 集合已 pin 在 GPU，没有主机内存读写。DDR4-2133 只影响 prefill/TTFT。
+3. **主因是单 token GEMV 的指令/功耗受限**：非 MTP decode 时 SM util 93-98%、功耗 270-275 W（V100 300 W 上限），HBM 只有 52%。batch=1 的 GEMV 无法喂满 tensor core，算力/调度而非流带宽是瓶颈。2K 与 256K 的非 MTP 速度几乎相同（36.7 vs 34.2），也证明上下文 KV 不是主变量。
+4. **MTP 是最大杠杆**：MTP 让一次权重读取产出约 1.6 个 token，SM util 降到 78-82%、功耗 229-244 W，decode 提升到 51-55 tok/s。长期停在 34-35 的真正原因是 MTP 在长上下文/大 resident 集合下没有生效（draft_n=0 或 draft 报错），不是带宽。
+
+## 24.1 KVMem 卸载机制与时机
+
+代码路径（`tools/server/server-context.cpp`、`src/kvmem-root/src/adapter/llama-memory-kvmem.cpp`）：
+
+- **Prefill 追加**：每个 ubatch 的新 token 写入 host KV store；当 `resident_tokens > 0.95 * pool` 或空闲 slot 不足时，`register_append` 触发 `KVMEM_PRESSURE phase=prefill`，用 retrieval 分数（或 recency + sink/recent 固定块）选出保留块，其余 GPU→host 卸载并释放 slot。
+- **Prefill 结束**：server 在 `SLOT_STATE_DONE_PROMPT` 调用 `llama_kvmem_end_prefill_capture` → `llama_kvmem_apply_retrieval`（用最后一个问题对全部 host 块打分）→ `llama_kvmem_pin_working_set`，把选中的块 host→GPU stage in，然后才开始生成。这一段计入 TTFT，不计入 decode。
+- **Decode 期间**：每个新 token 追加到 store，但使用 `gen_reserve` 预留的 slot；只要生成长度 < `gen_reserve` 且没有碎片，**不发生卸载/换入**。一旦超过预留（此前的 22K 输出问题），会在 decode 中触发 `KVMEM_PRESSURE phase=decode`，产生主机/PCIe 流量并可能 slot 耗尽。
+- **传输量**：q8_0 KV 约 64 KiB/token（K+V 全部层）。prefill 卸载量约 `(prompt - pool) * 64 KiB`，retrieval 约 `pool * 64 KiB`；例如 106K prompt、40K 池约 4.1 GiB 写出 + 2.5 GiB 读回，PCIe 上合计约 0.5 s，相对 3-4 min prefill 很小。
+
+因此：主机内存/DDR4 带宽和 PCIe 主要影响 **prefill 与首 token 延迟**；持续 decode 的 34-35 tok/s 是 GPU 单 token 执行效率问题，靠 NUMA/DDR 优化不会有明显收益。
