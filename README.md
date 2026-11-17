@@ -909,7 +909,8 @@ KVMem 换页在四种精度下均无 hole/段错误。
 
 - 绝对准确：`q8_0/q8_0` 全注意力，256K Decode 约 34 tok/s，3/3 暗号，显存 14.2 GiB。
 - 高吞吐：16K 窗口 41.7 tok/s，但丢中间记忆；2K 窗口 52 tok/s，仅适合短记忆任务。
-- 生产默认改为 **256k profile**：`--kvmem-budget 8192 --kvmem-gen-reserve 4096`、q8_0/q8_0、无窗口；经 14802 实测 250K prompt 261503 token，prefill 588.9、decode 34.2 t/s，三暗号全中，无错误。
+- 生产默认已恢复为**原版全注意力**：`--kvmem-budget 6144 --kvmem-gen-reserve 34816`（池 40960）、q8_0/q8_0、无窗口，兼顾 256K 上下文与 23K+ 长输出。
+- 256K 精确档可用 `KV_PROFILE=256k`（池 12288，gen 上限 4K）；高速档 `KV_PROFILE=fast`（window 2048，约 52 t/s）。
 - 保留 `KV_PROFILE=fast`（window 2048，52 t/s）与 `KV_PROFILE=long`（池 40960，长输出）。
 
 ## 23. FP8 KV 支持尝试（2026-11-17，未上线）
