@@ -338,6 +338,7 @@ struct common_params_speculative_draft {
     // without shortening it: on a 4070 with Bonsai 2 27B the draft is +85% at zero depth, breaks
     // even near 24k tokens and costs 30% at 64k. Past the cutoff the slot decodes one token per step.
     int32_t n_depth_max = 0;
+    int32_t n_draft_window = 4096; // keep this many recent target tokens resident for MTP drafts
 
     bool backend_sampling = true; // offload draft sampling to the backend (default: on)
 
