@@ -1465,6 +1465,11 @@ common_init_result_ptr common_init_from_params(common_params & params, bool mode
         kp.block_tokens  = params.kvmem_block_tokens  > 0 ? (uint32_t) params.kvmem_block_tokens  : 32;
         kp.sink_tokens   = params.kvmem_sink_tokens   > 0 ? (uint32_t) params.kvmem_sink_tokens   : 0;
         kp.recent_tokens = params.kvmem_recent_tokens > 0 ? (uint32_t) params.kvmem_recent_tokens : 0;
+        if (std::find(params.speculative.types.begin(), params.speculative.types.end(),
+                COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end() &&
+                params.speculative.draft.n_draft_window > 0) {
+            kp.recent_tokens = std::max(kp.recent_tokens, (uint32_t) params.speculative.draft.n_draft_window);
+        }
         kp.method        = params.kvmem_method >= 0 ? params.kvmem_method : 1;
         kp.gpu_memory_ratio  = params.kvmem_gpu_ratio;
         kp.cpu_bytes         = (uint64_t) params.kvmem_cpu_gb   << 30;
