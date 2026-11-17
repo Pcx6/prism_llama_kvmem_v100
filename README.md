@@ -975,3 +975,36 @@ SIGSEGV at 0x0
 - **传输量**：q8_0 KV 约 64 KiB/token（K+V 全部层）。prefill 卸载量约 `(prompt - pool) * 64 KiB`，retrieval 约 `pool * 64 KiB`；例如 106K prompt、40K 池约 4.1 GiB 写出 + 2.5 GiB 读回，PCIe 上合计约 0.5 s，相对 3-4 min prefill 很小。
 
 因此：主机内存/DDR4 带宽和 PCIe 主要影响 **prefill 与首 token 延迟**；持续 decode 的 34-35 tok/s 是 GPU 单 token 执行效率问题，靠 NUMA/DDR 优化不会有明显收益。
+
+## 25. MTP 长上下文修复：保留 draft 尾部窗口（2026-11-17）
+
+### 根因
+
+不是模型在长上下文主动关闭 MTP，而是 KVMem 检索后的驻留集合缺少 draft 需要的目标 slot：
+
+- MTP follower 的 `fill_from_target()` 用 `target_->slot_for_orig_pos(pos)` 把草稿 KV 列映射到 target 的 GPU slot。
+- prefill 结束时 `apply_retrieval` 只保留问题相关块和 `recent_tokens`；默认 `recent_tokens=64`。
+- draft 的 catch-up 行包含约 3.8K token 之前的位置；这些位置已被换出，`no target slot for pos 102400`，`llama_decode[0]` 返回 1，draft 被放弃，`draft_n=0`，速度回落到 34-35 t/s。
+
+### 修复
+
+新增 `--spec-draft-window N`（默认 4096，0 = 关闭）：启用 MTP 时强制 KVMem `recent_tokens >= N`，保证 draft 需要的尾部窗口留在 GPU。
+
+- 2048 不够：位置 102400/102401 距结尾约 3.8K，仍会 no target slot。
+- 4096 足够：128K/256K 均不再报错。
+
+### 实测
+
+| 场景 | Decode tok/s | Draft | 质量 |
+|---|---|---|---|
+| 128K 全注意力，修复前 | 34.5 | 0 | 3/3 |
+| 128K 全注意力，`--spec-draft-window 4096` | **57.8** | 204/152 | 3/3 |
+| 250K 全注意力，window 4096 | **57.0** | 144/108 | 3/3（含 MIDDLE-ULTRA-256） |
+| 16K 全注意力，默认 window | 50.8 | 51/36 | - |
+| 128K，window 2048 | 35.0 | 0 | - |
+
+主模型仍验证全量上下文，生成质量不降；draft 只是用尾部窗口做 catch-up。
+
+### 生产
+
+`start-llama-14803.sh` 已加入 `--spec-draft-window 4096`，保持原版全注意力（池 40960）。14803/14802 均 200，显存约 14.0 GiB。
