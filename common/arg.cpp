@@ -4266,6 +4266,17 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
     ).set_spec().set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_SPEC_DRAFT_DEPTH_MAX"));
 
     add_opt(common_arg(
+        {"--spec-draft-window"}, "N",
+        string_format("recent target tokens kept resident for MTP drafts (0 = disabled, default: %d)", params.speculative.draft.n_draft_window),
+        [](common_params & params, int value) {
+            if (value < 0) {
+                throw std::invalid_argument("invalid value");
+            }
+            params.speculative.draft.n_draft_window = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_SPEC_DRAFT_WINDOW"));
+
+    add_opt(common_arg(
         {"--spec-draft-p-split", "--draft-p-split"}, "P",
         string_format("speculative decoding split probability (default: %.2f)", (double)params.speculative.draft.p_split),
         [](common_params & params, const std::string & value) {
