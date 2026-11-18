@@ -3617,6 +3617,25 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
+        {"--kvmem-resident-high"}, "P",
+        "resident KV high watermark as a fraction of the GPU pool, 0 = 0.95",
+        [](common_params & params, const std::string & value) {
+            const float v = std::stof(value);
+            if (v < 0.0f || v > 1.0f) throw std::invalid_argument("invalid value");
+            params.kvmem_high_watermark = v;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_KVMEM_RESIDENT_HIGH"));
+    add_opt(common_arg(
+        {"--kvmem-resident-low"}, "P",
+        "resident KV target after demotion as a fraction of the GPU pool, 0 = 0.85",
+        [](common_params & params, const std::string & value) {
+            const float v = std::stof(value);
+            if (v < 0.0f || v > 1.0f) throw std::invalid_argument("invalid value");
+            params.kvmem_low_watermark = v;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_KVMEM_RESIDENT_LOW"));
+
+    add_opt(common_arg(
         {"--kvmem-host-mib"}, "N",
         string_format("host KV quota in MiB, 0 = unlimited (default: %d)", params.kvmem_host_mib),
         [](common_params & params, int value) {
