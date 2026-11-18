@@ -642,6 +642,8 @@ struct common_params {
     int32_t kvmem_host_mib      = 0;     // host KV quota in MiB; 0 = unlimited
     int32_t kvmem_cpu_gb        = 0;     // CPU spill arena in GiB; 0 = off
     float   kvmem_gpu_ratio     = 0.0f;  // slot pool cap vs VRAM; 0 = 0.50
+    float   kvmem_high_watermark = 0.0f; // resident high watermark ratio; 0 = 0.95
+    float   kvmem_low_watermark  = 0.0f; // target after demotion; 0 = 0.85
     int32_t kvmem_idle_ttl      = 86400; // seconds of idle before evicting a slot's KV; 0 = never
     int32_t kvmem_query_max_tokens = 512; // max tokens kept from the user question for retrieval
 
