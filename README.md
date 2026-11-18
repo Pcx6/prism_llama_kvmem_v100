@@ -16,7 +16,7 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 
 | 选项 | 模型 | 说明 |
 |---|---|---|
-| `1`（默认） | Qwen3.8-27B GSQ IQ3_XXS | MTP + 视觉，2K 上下文 decode 约 61 tok/s |
+| `1`（默认） | Qwen3.8-27B GSQ IQ3_XXS | MTP + 视觉，2K prompt 1962 decode 约 51.4 tok/s（当前 default；61.1 为历史调优档） |
 | `2` | Ternary Bonsai 2 27B PTQ1_0 | 旧模型 + 视觉，128K（历史 nominal）decode 约 34-35 tok/s（无 MTP） |
 
 非交互选择：`./deploy/quickstart.sh 2`，或 `MODEL_CHOICE=2 ./quickstart.sh`。GSQ 档可加 `KV_PROFILE=fast`（约 52 tok/s）或 `KV_PROFILE=256k`（256K 精确档）。
