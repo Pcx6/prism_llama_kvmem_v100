@@ -13,7 +13,7 @@
 | 投机解码 | MTP n-max 2，`--spec-draft-window 4096`（MTP target slot 窗口，不是检索 `--kv-window`；除非注明） |
 | 上下文 | 262144 |
 | 测量 | 非流式 /v1/chat/completions，cache_prompt=false，取 timings.predicted_per_second；prefill 取 prompt_per_second |
-| 构建 commit | 未逐条归档；bench 环境用 `git rev-parse HEAD` 记录 |
+| 构建 commit | 未逐条归档；复现时请自行记录 `git rev-parse HEAD` |
 | 二进制 sha256 | 源码构建，由构建者本地记录；仓库不分发二进制 |
 
 decode 与 prefill 是不同指标，不能混用。
@@ -71,7 +71,7 @@ decode 与 prefill 是不同指标，不能混用。
 
 - 速度：`--spec-draft-window 4096` 修复后，128K/256K 全注意力 decode 从 34-35 提升到 57 左右。
 - 质量：本组 106K/261K 全注意力测试三暗号 3/3。`--spec-draft-window` 与第 4 节检索 `--kv-window` 是**两个不同参数**；第 4 节 pool=16384 的 `--kv-window 4096` 只命中 2/3，不能把两条结论互相覆盖。
-- 短请求路径：MTP 开启时原生短路被禁用，61.1 这个数字走的是 KVMem 分页/检索路径，不是 Bonsai 的 `KVMEM_SHORT_BYPASS`。
+- 短请求路径：MTP 开启时原生短路被禁用；61.1 是历史调优档（池 18432、输出 700）走 KVMem 分页/检索路径的数字，不是当前 default（51.4），也不是 Bonsai 的 `KVMEM_SHORT_BYPASS`。
 
 
 ## 3. 其他模型 / 配置
