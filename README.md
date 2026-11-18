@@ -17,7 +17,7 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 | 选项 | 模型 | 说明 |
 |---|---|---|
 | `1`（默认） | Qwen3.8-27B GSQ IQ3_XXS | MTP + 视觉，2K 上下文 decode 约 61 tok/s |
-| `2` | Ternary Bonsai 2 27B PTQ1_0 | 旧模型 + 视觉，128K decode 约 34-35 tok/s（无 MTP） |
+| `2` | Ternary Bonsai 2 27B PTQ1_0 | 旧模型 + 视觉，128K（历史 nominal）decode 约 34-35 tok/s（无 MTP） |
 
 非交互选择：`./deploy/quickstart.sh 2`，或 `MODEL_CHOICE=2 ./quickstart.sh`。GSQ 档可加 `KV_PROFILE=fast`（约 52 tok/s）或 `KV_PROFILE=256k`（256K 精确档）。
 
@@ -133,7 +133,7 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 | 短路 | 启用 MTP 时禁用原生短路（见 2.3、25 与 docs/HISTORY.md（17.4 已归档）） |
 | 显存 | 启动约 13.5 GiB；长输出峰值约 14.8 GiB / 16 GB |
 | 长文（**prefill** tok/s） | 117K 约 549；226K 约 488（不是 decode） |
-| 128K decode | 57.8 tok/s（draft window 4096，draft 204/152） |
+| 128K decode | 57.8 tok/s（名义 128K 夹具，prompt 106254；draft window 4096，draft 204/152） |
 | 短请求 decode | 2K prompt 1962 约 51.4 tok/s（当前 default；61.1 为历史调优档，见 1.4） |
 | 8 轮 Agent | 27.5-31.2 s（TTFT 17.9-21.2 s，后段 47-50 tok/s） |
 | 视觉 | OCR 正常（14802），TTFT 约 3.9-7.9 s |
@@ -151,7 +151,7 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 | 投机解码 | 无 |
 | 短路 | 可用；阈值约 33075 token |
 | 显存 | 启动/峰值约 9.3-9.9 GiB |
-| 128K decode | 约 34-35 tok/s |
+| 128K decode | 约 34-35 tok/s（历史 nominal，prompt 以当时夹具为准） |
 | 启动 | `deploy/start-llama-14803.sh 2` 或 `MODEL_CHOICE=2 ...` |
 
 > 5.1/5.2 历史池扫描已归档到 docs/HISTORY.md，不能和 GSQ profile 混用。
@@ -174,6 +174,8 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 
 `32768` 是程序内置的 `--kvmem-budget` 默认，不属于上述四档；`40960` 是 default 的池总量，不是 budget。
 
+“128K”是夹具名 `bench_128k.py` 的标称档位；当前 GSQ 实测 prompt 为 **106254** token，不是 131072。历史 Bonsai 表里出现过 131K prompt，属旧夹具。当前“250K/256K”实测为 261503 token。
+
 `2.1-2.2 GiB`（4.6 节）指 Bonsai 池 34816 × 64 KiB，`2.5 GiB`（1.1 节）指 GSQ 池 40960 × 64 KiB；两者是不同 profile。同理，`9-10 GB` 是 Bonsai 显存，`13.5/14.8 GiB` 是 GSQ 显存。8 轮 Agent 的 `34.0 → 23-24 s` 是 Bonsai/无投机历史，`27.5-31.2 s` 是当前 GSQ MTP 值。
 
 ### 1.4 速度数字索引（每条都带条件）
@@ -189,7 +191,7 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 | decode | 约 52 | 106K | GSQ fast（window 2048） | 冷 |
 | decode | 34-35 | 106K | Bonsai legacy / GSQ MTP 未生效 | 冷 |
 
-128K/256K 的 57 带长上下文条件，且主模型验证全量上下文；详细表见 [BENCHMARK.md](BENCHMARK.md)。
+128K/256K 的 57 带长上下文条件，且主模型验证全量上下文；“128K”实际 prompt 106254，“256K”实际 261503；详细表见 [BENCHMARK.md](BENCHMARK.md)。
 
 ## 2. 架构
 
@@ -390,8 +392,8 @@ GSQ（当前生产默认，MTP 开启）：
 
 | profile | KVMem 池 | 用途 | 实测 |
 |---|---|---|---|
-| `default` | 6144 + 34816 | 全注意力，23K+ 长输出 | 128K decode 57.8；256K decode 57.0 |
-| `fast` | 4096 + 12288 | window 2048，日常短对话 | 128K decode 约 52 |
+| `default` | 6144 + 34816 | 全注意力，23K+ 长输出 | 128K（106254）decode 57.8；256K（261503）decode 57.0 |
+| `fast` | 4096 + 12288 | window 2048，日常短对话 | 128K（106254）decode 约 52 |
 | `256k` | 8192 + 4096 | 256K 精确档 | 约 34 tok/s，输出上限约 4K |
 
 Bonsai（legacy，无投机）：`--kvmem-budget 12288 --kvmem-gen-reserve 22528`（池 34816，短路阈值 33075），decode 约 34-35 tok/s。
