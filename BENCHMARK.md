@@ -33,7 +33,7 @@ decode 与 prefill 是不同指标，不能混用。
 | Bonsai legacy | decode 34-35 | 冷 | 106K | off | 未记录 | source-only | 历史 |
 | GSQ default | prefill 549 | 冷 | 117K | on | 未记录 | source-only | 1 |
 
-冷 = 新 prompt、`cache_prompt=false`；热 = 复用前缀。TTFT 单列时以 `s` 为单位。明细表保留原始列；commit/二进制 sha256/复跑次数字段见本矩阵，缺失项为 TODO。
+冷 = 新 prompt、`cache_prompt=false`；热 = 复用前缀。TTFT 单列时以 `s` 为单位。明细表保留原始列；commit/二进制 sha256/复跑次数字段见本矩阵，缺失项写 `未记录` / `source-only`。
 
 ## 2. GSQ IQ3_XXS-mtp（当前默认，全注意力）
 
