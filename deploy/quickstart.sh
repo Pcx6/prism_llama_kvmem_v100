@@ -1,21 +1,28 @@
 #!/bin/bash
-# One-command launcher with model selection.
-#   curl -fL https://github.com/Pcx6/prism_llama_kvmem_v100/releases/download/v0.1.0/quickstart.sh | bash
-#   curl -fL .../quickstart.sh | bash -s -- 2
-#   MODEL_CHOICE=2 ./quickstart.sh
-# Environment: DEST, MODELS, PORT, HOST, API_KEY, HF_ENDPOINT, TAG, REPO
+# Source-build launcher for Prism KVMem on V100 (sm_70).
+#   KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
+#   KVMEM_ROOT=... MODEL_CHOICE=2 ./deploy/quickstart.sh
+#   KVMEM_ROOT=... KV_PROFILE=fast ./deploy/quickstart.sh 1
+# No prebuilt binary is distributed; KVMem adapter is not part of this repo.
 set -euo pipefail
 
-TAG="${TAG:-v0.1.0}"
-KV_PROFILE="${KV_PROFILE:-default}"
-CPUSET="${CPUSET:-0-11,24-35}"
 REPO="${REPO:-Pcx6/prism_llama_kvmem_v100}"
-BASE="https://github.com/${REPO}/releases/download/${TAG}"
+TAG="${TAG:-main}"
 DEST="${DEST:-$HOME/.local/opt/prism_kvmem}"
 PORT="${PORT:-14803}"
 HOST="${HOST:-127.0.0.1}"
+CPUSET="${CPUSET:-0-11,24-35}"
+KV_PROFILE="${KV_PROFILE:-default}"
+SRC_DIR="${SRC_DIR:-$DEST/src}"
+KVMEM_ROOT="${KVMEM_ROOT:-}"
+
 if [ -z "${API_KEY:-}" ]; then
-  API_KEY="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  API_KEY="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' 
+')"
+fi
+if [ -z "$KVMEM_ROOT" ]; then
+  echo "KVMEM_ROOT is required; the KVMem adapter is not distributed with this repo" >&2
+  exit 2
 fi
 
 CHOICE="${1:-${MODEL_CHOICE:-}}"
@@ -23,8 +30,8 @@ if [ -z "$CHOICE" ]; then
   if [ -t 0 ]; then
     cat <<EOF
 Select model:
-  1) Qwen3.8-27B GSQ IQ3_XXS + MTP + vision  (recommended, ~61 tok/s decode)
-  2) Ternary Bonsai 2 27B PTQ1_0 + vision    (legacy, ~34 tok/s decode)
+  1) Qwen3.8-27B GSQ IQ3_XXS + MTP + vision  (default)
+  2) Ternary Bonsai 2 27B PTQ1_0 + vision    (legacy)
 EOF
     printf "Enter 1 or 2: "
     read -r CHOICE
@@ -73,17 +80,25 @@ if [ -z "$MODELS" ]; then
 fi
 
 if [ "${DRY_RUN:-0}" = "1" ]; then
-  echo "[dry-run] model=$CHOICE repo=$REPO_ID"
-  echo "[dry-run] model_file=$MODELS/$MODEL_FILE"
-  echo "[dry-run] mmproj=$MODELS/$MMPROJ_FILE"
-  echo "[dry-run] alias=$ALIAS kv_profile=$KV_PROFILE kv_budget=$KV_BUDGET kv_gen=$KV_GEN extra=${EXTRA[*]:-none} pol=${KVPOL[*]:-none}"
+  echo "[dry-run] model=$CHOICE profile=$KV_PROFILE repo=$REPO_ID"
+  echo "[dry-run] src=$SRC_DIR build=$DEST/build-sm70 kvmem_root=$KVMEM_ROOT"
+  echo "[dry-run] model_file=$MODELS/$MODEL_FILE mmproj=$MODELS/$MMPROJ_FILE"
+  echo "[dry-run] alias=$ALIAS kv_budget=$KV_BUDGET kv_gen=$KV_GEN pol=${KVPOL[*]:-none}"
   exit 0
 fi
-if [ ! -x "$DEST/bin/llama-server" ]; then
-  echo "[quickstart] installing binaries to $DEST"
-  mkdir -p "$DEST"
-  curl -fL "$BASE/prism_kvmem-$TAG-linux-sm70.tar.gz" | tar xz -C "$DEST" --strip-components=1
+
+if [ ! -f "$SRC_DIR/CMakeLists.txt" ]; then
+  echo "[quickstart] cloning $REPO ($TAG) to $SRC_DIR"
+  mkdir -p "$(dirname "$SRC_DIR")"
+  git clone --depth 1 --branch "$TAG" "https://github.com/$REPO.git" "$SRC_DIR"
 fi
+
+echo "[quickstart] building sm_70 server (CUDA 12.8/12.9, KVMEM_ROOT=$KVMEM_ROOT)"
+cmake -S "$SRC_DIR" -B "$DEST/build-sm70" \
+  -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=70 \
+  -DLLAMA_KVMEM=ON -DLLAMA_KVMEM_ROOT="$KVMEM_ROOT" \
+  -DLLAMA_BUILD_SERVER=ON -DGGML_NATIVE=ON
+cmake --build "$DEST/build-sm70" -j "$(nproc)" --target llama-server
 
 need=0
 for f in "$MODEL_FILE" "$MMPROJ_FILE"; do
@@ -93,21 +108,18 @@ if [ "$need" = "1" ]; then
   echo "[quickstart] downloading $CHOICE model files to $MODELS"
   command -v huggingface-cli >/dev/null || python3 -m pip install -U "huggingface_hub[cli]"
   mkdir -p "$MODELS"
-  hf_endpoint="${HF_ENDPOINT:-}"
-  if [ -n "$hf_endpoint" ]; then
-    export HF_ENDPOINT
-  fi
+  if [ -n "${HF_ENDPOINT:-}" ]; then export HF_ENDPOINT; fi
   huggingface-cli download "$REPO_ID" "$MODEL_FILE" --local-dir "$MODELS"
   huggingface-cli download "$REPO_ID" "$MMPROJ_FILE" --local-dir "$MODELS"
 fi
 
-echo "[quickstart] model: $CHOICE"
+echo "[quickstart] model: $CHOICE ($KV_PROFILE)"
 echo "[quickstart] API key: $API_KEY"
 echo "[quickstart] endpoint: http://$HOST:$PORT/v1/chat/completions"
-export LD_LIBRARY_PATH="$DEST/bin"
+export LD_LIBRARY_PATH="$DEST/build-sm70/bin"
 RUN=()
 if command -v taskset >/dev/null 2>&1 && [ -n "$CPUSET" ]; then RUN=(taskset -c "$CPUSET"); fi
-exec "${RUN[@]}" "$DEST/bin/llama-server" \
+exec "${RUN[@]}" "$DEST/build-sm70/bin/llama-server" \
   -m "$MODELS/$MODEL_FILE" --mmproj "$MODELS/$MMPROJ_FILE" \
   "${EXTRA[@]}" \
   -a "$ALIAS" -c 262144 -ngl 99 -t 24 -np 1 --reasoning on \
