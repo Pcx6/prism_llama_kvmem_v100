@@ -374,7 +374,8 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 - 扫描周期约 1 秒（队列空闲 tick），只处理 `state == IDLE` 的 slot。
 - 超时后 `prompt_clear()`（KVMem full reset）+ `malloc_trim(0)`，日志 `KVMEM_IDLE_EVICT reason=idle_ttl idle_ms=... n_tokens=...`。
 - 实测释放：64K 会话 RSS 5.63 GB -> 1.27 GB（TTL=5 s）；250K 会话 17.96 GB -> 1.33 GB（TTL=10 s）。
-- OOM 兜底：`MemAvailable < 1.5 GB` 或 GPU free < 1 GB 时强制清理 IDLE slot（`reason=oom_guard`）；decode 分配失败时清理并重试一次（`reason=oom_retry`）。
+- OOM 兜底：`MemAvailable < 1.5 GB` 或 GPU free < **256 MiB** 时强制清理 IDLE slot（`reason=oom_guard`）；decode 分配失败时清理并重试一次（`reason=oom_retry`）。
+- 注意：V100 上生产池正常运行时 GPU free 常低于 1 GB；旧阈值 1 GB 会在每次请求后约 3 秒误判 OOM、清空 idle slot，导致工具调用之间 prefix cache 全丢。现阈值改为 256 MiB，只在真正接近 OOM 时清理。
 - 说明：GPU KV 池是启动时固定分配（约 2.1-2.2 GB），TTL 释放的是池内行和主机内存，不会把池显存归还驱动。
 
 
