@@ -15,14 +15,14 @@ curl -fL https://github.com/Pcx6/prism_llama_kvmem_v100/releases/download/v0.1.0
 | `1`（默认） | Qwen3.8-27B GSQ IQ3_XXS | MTP + 视觉，短文本 decode 约 61 tok/s |
 | `2` | Ternary Bonsai 2 27B PTQ1_0 | 旧模型 + 视觉，decode 约 33-35 tok/s |
 
-非交互选择：`curl ... | bash -s -- 2`，或 `MODEL_CHOICE=2 ./quickstart.sh`。
+非交互选择：`curl ... | bash -s -- 2`，或 `MODEL_CHOICE=2 ./quickstart.sh`。GSQ 档可加 `KV_PROFILE=fast`（约 52 tok/s）或 `KV_PROFILE=256k`（256K 精确档）。
 
-要求：Linux x86_64、NVIDIA **sm_70（V100）** 或兼容驱动、Python 3、约 8 GB 磁盘。
-脚本会下载二进制包（57 MB）与模型/视觉塔（约 6.2 GB），生成随机 API key，并在 `14803` 启动服务。
+要求：Linux x86_64、NVIDIA **sm_70（V100）** 或兼容驱动、Python 3、至少 20 GB 磁盘。
+脚本会下载二进制包（约 56 MiB）与所选模型/视觉塔（GSQ 约 10.7 GB，Bonsai 约 6.2 GB），生成随机 API key，并在 `14803` 启动服务。
 自定义：`PORT=14803 API_KEY=my-key MODELS=/data/models curl ... | bash`。
 手动构建见第 3 节，Release 说明见 [v0.1.0](https://github.com/Pcx6/prism_llama_kvmem_v100/releases/tag/v0.1.0)。
 如需在执行前审查脚本内容，请查看 [quickstart.sh](https://raw.githubusercontent.com/Pcx6/prism_llama_kvmem_v100/main/deploy/quickstart.sh) 源码。
-Release 资产 `prism_kvmem-v0.1.0-linux-sm70.tar.gz` 的 SHA256：`da4e917a2fdd62d2a30d25f488d674c0a41d24692d3a21679f83504bb928a30d`（下载后可用 `sha256sum` 校验）。
+Release 资产 `prism_kvmem-v0.1.0-linux-sm70.tar.gz` 的 SHA256：`e2a2e815c09f9e45a69047eade49fa7935177bf6419d60671390ddeb6fac208c`（下载后可用 `sha256sum` 校验）。
 
 
 本仓库是 Prism（qwen35 架构 27B 三值量化模型）的 llama.cpp 分支，把 KVMem 主机侧 KV 换页适配器编译进 Prism，并在此基础上完成：
@@ -65,7 +65,9 @@ Release 资产 `prism_kvmem-v0.1.0-linux-sm70.tar.gz` 的 SHA256：`da4e917a2fdd
 | `API_KEY_FILE` | - | 存放 API_KEY 的文件路径（示例） |
 | `KVMEM_ROOT` | - | kvmem-root 源码路径（仅构建 KVMem 时） |
 | `PORT` / `CTX` | 14803 / 262144 | 监听端口 / 上下文 |
-| `KV_BUDGET` / `KV_GEN_RESERVE` | 12288 / 22528 | KVMem GPU 池 |
+| `KV_BUDGET` / `KV_GEN_RESERVE` | 6144 / 34816 | KVMem GPU 池（全注意力默认） |
+| `KV_PROFILE` | default | `fast` / `256k` / `default` |
+| `CPUSET` | 0-11,24-35 | llama-server 的 CPU 绑定 |
 | `KV_TTL` | 86400 | 空闲 KV 清理秒数，0 禁用 |
 | `PROMPT_FILE` | 各脚本默认 | 基准脚本的长文本文件 |
 | `IMAGE_FILE` | - | 多模态复现脚本的图片路径 |
@@ -221,7 +223,7 @@ curl -s http://127.0.0.1:14802/v1/chat/completions \
 
 `$REPO/deploy/start-llama.sh`：
 
-环境变量（必需）：`MODEL`、`MMPROJ`、`API_KEY`；可选：`PORT`（14803）、`CTX`（262144）、`KV_BUDGET`（12288）、`KV_GEN_RESERVE`（22528）、`KV_TTL`（86400）、`THREADS`（24）、`LLAMA_BIN`。
+环境变量（必需）：`MODEL`、`MMPROJ`、`API_KEY`；可选：`PORT`（14803）、`CTX`（262144）、`KV_BUDGET`（6144）、`KV_GEN_RESERVE`（34816）、`KV_TTL`（86400）、`THREADS`（24）、`LLAMA_BIN`。
 
 ```bash
 export MODEL=/path/to/Ternary-Bonsai-2-27B-PTQ1_0.gguf
@@ -575,7 +577,9 @@ b9620c5 server : stop generation when the client disconnects
 | `test_vision.py` | 图片 OCR/描述，输出 TTFT 与文本 |
 | `repro_prefix_reuse.py` | 长请求后短前缀复用（hole 回归；位置参数 port key [ngen]） |
 | `repro_multimodal_reuse.py` | 图像请求后文本前缀复用（hole 回归；位置参数 port key，图片用 IMAGE_FILE） |
-| `deploy/start-llama.sh` | 生产启动（env：MODEL/MMPROJ/API_KEY） |
+| `deploy/start-llama.sh` | 通用启动（env：MODEL/MMPROJ/API_KEY） |
+| `deploy/start-llama-14803.sh` | 1/2 模型切换 + KV_PROFILE + taskset |
+| `deploy/quickstart.sh` | 一键安装/下载/启动（Release 资产） |
 | `deploy/start-llama-prism.sh` | 回滚：无 KVMem/视觉，131072 ctx |
 | `deploy/trim_proxy.mjs` | 14802 代理（断连中止、tool 裁剪、灰度预留） |
 | `deploy/download-models.sh` | 从 Hugging Face 下载模型与视觉塔 |
@@ -699,7 +703,9 @@ git push -u origin clean-main     # 分支名按需修改
 2. 显存方案：第二块 GPU，或单独运行（停止 Prism）后把 `ROUTING_MODE=auto` 或使用 `x-backend: 1cat` 测试。
 3. 切换前先做短文本并发、长文本、多模态回归；确认后再改 `ROUTING_MODE`。
 
-## 16. 生产模型切换：Qwen3.8-27B IQ3_XXS（2026-11-14）
+## 16. 生产模型切换：Qwen3.8-27B IQ3_XXS（2026-11-14，历史记录）
+
+> 本节记录当时的切换过程；当前生产配置见第 17 节与第 25 节（MTP draft window、全注意力池 6144/34816）。
 
 ### 16.1 最终配置
 
@@ -734,8 +740,9 @@ git push -u origin clean-main     # 分支名按需修改
 ### 17.1 最终配置
 
 - 模型：`Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf`（含 nextn MTP head）+ `mmproj-Qwen3.8-27B-BF16.gguf`
-- `--spec-type draft-mtp --spec-draft-n-max 2`；`--cache-type-k q8_0 --cache-type-v q8_0`
+- `--spec-type draft-mtp --spec-draft-n-max 2 --spec-draft-window 4096`；`--cache-type-k q8_0 --cache-type-v q8_0`
 - `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 34816`（池 40960，短路阈值 38912）
+- 启动：`deploy/start-llama-14803.sh 1`（或 `KV_PROFILE=fast|256k`）
 - `--reasoning on` 全程保留；`-c 262144 -fa on -ub 1024 -b 4096`
 - 回滚：`cp /srv/llama_agent/start-llama-14803.sh.bak-qwen38 /srv/llama_agent/start-llama-14803.sh`
 
