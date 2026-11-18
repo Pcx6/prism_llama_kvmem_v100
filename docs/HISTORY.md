@@ -1,6 +1,36 @@
 # 历史实验归档
 
-本文件保存已归档的历史实验记录（2026-11-06 至 2026-11-17）。这些数字和配置属于当时 profile，不得作为当前生产值；当前口径见 README 第 1、5.3、18、25、26 节与 BENCHMARK.md。
+本文件保存已归档的历史实验记录（2026-11-06 至 2026-11-17）。这些数字和配置属于当时 profile，不得作为当前生产值。当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](../BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](HISTORY.md)。
+
+> 编号沿用原 README：跳号（7、9-12、15、18、24-26）表示仍在主文档，不是缺失。5.1/5.2 已前移到 6 节前，17.4 已并入 17 节。
+>
+> 文中 `6b17bfb`、`52318f4`、`e996c36`、`b9620c5` 等 hash 是 filter-repo 清理前的历史标识，当前仓库可能无法检出；仅作事件标识，定位用文件+函数名。
+
+### 5.1 budget 扫描（128K 请求，16 GB 卡；Bonsai 时代历史数据）
+
+| budget | 启动显存 | 128K 峰值 | 128K prefill / decode | 短路实测 |
+|---|---|---|---|---|
+| 12288 | 7647 MiB | ~7.9 GB | 741.8 / 53.9 | 819.8 t/s @14.3K |
+| 16384 | 7487 | 7901 | 681.5 / 51.3 | 819.8 @14.3K |
+| 24576 | 8015 | 8527 | 598.9 / 48.0 | 754.8 @22.5K |
+| 32768 | 8543 | 8959 | 541.5 / 45.2 | 30.7K 走短路 |
+| 40960 | 9071 | 9503 | 497.7 / 27.3 | 648.9 @38.9K |
+| 49152 | 9599 | 10033 | 463.0 / 25.8 | 604.9 @47.1K |
+
+结论：显存在 16 GB 内不是瓶颈，**池越大长文 prefill 越慢**（换页收缩后的注意力窗口 = 池大小）。
+
+表中的「短路实测」是当时 budget 与其 gen_reserve 组合下的 `0.95 × 池总量`，随档变化；`30.7K`/`38.9K` 不是固定全局阈值。
+
+### 5.2 14 GB 池实验（Bonsai 时代历史数据，按每 GB 收益 5% 规则否决）
+
+| 池大小 | 启动 | 峰值 | 128K prefill/decode | 256K prefill/decode |
+|---|---|---|---|---|
+| 34816 | 8543 | 8929 | 573.2 / 52.5 | 542.8 / 47.5 |
+| 106496 | 13163 | 13605 | 390.8 / 52.6 | - |
+| 131072（适配器上限） | 14623 | 15019 | 387.6 / 23.6 | - |
+| 114688（上限 - 1 GB） | 13691 | 14379 | ~390 | 315.9 / 48.6 |
+
+9.3 GB -> 14.4 GB 显存增加 5.1 GB，长文 prefill 反而下降 32-42%，负相关，按规则放弃。
 
 ## 6. 极限上下文实测（收口）
 
@@ -256,6 +286,16 @@ git push -u origin clean-main     # 分支名按需修改
 
 完整数据：`/srv/llama_agent/logs/final_bench.md`。
 
+### 17.4 长输出中断修复（2026-11-15）
+
+- 现象：网页端输出到约 10K/3K token 停止，报 `Stream resume produced no new bytes`；服务端日志为 `Context size has been exceeded` / `failed to find a memory slot`，总 token 约 16-17K。
+- 原因：KVMem 池 18432（阈值 17510）；WebUI 默认 `max_tokens=-1`，旧短路判据只看 prompt，prompt < 17.5K 即走原生短路（无 host mirror）；prompt+生成超过池上限后无法继续分配 slot，流结束且 UI 续传拿到空。
+- 修复（2026-11-15 二次）：根因是 **MTP 投机解码 + 原生短路径** 的 batch 索引异常（`speculative batch index 1 is not inside the current sub-batch [0, 1)`），随后 KVMem 报 `block 448 has no GPU slot`、`Context size has been exceeded`。现在只要启用投机解码，就禁用原生短路，强制走 KVMem 分页路径；同时 `n_predict <= 0` 时按 `gen_reserve` 预留生成空间。
+- 验证：强制生成 12000 token（`ignore_eos`）成功，55.1 t/s，无 speculative/context 错误；8 轮 Agent 38.6 s（TTFT 29.0 s，decode 46.8 t/s）；短请求不再走短路（`KVMEM_SHORT_BYPASS` = 0）。
+- 追加（2026-11-15）：`gen_reserve` 从 12288 提高到 **18432**（池 24576），解决生成阶段 slot 容量不足；经 14802 实测 12000 token 输出成功（54.8 t/s），16K 测试也通过（54.1 t/s），无 `no GPU slot` / `Context size exceeded`。
+- 再次追加：18000 token 级 prompt + 12000 token 输出仍会撞到 22.5K 级 slot 上限；`gen_reserve` 进一步提升到 **26624**（池 32768）。经 14802 实测 16202 prompt + 12000 输出 = 28202 token 成功（33.4 t/s），无 slot/context 错误；256K prompt 仍可正常预填（487.8 t/s）。
+- 2026-11-15 最终：22000 token 级输出仍会撞 22K slot 上限；`gen_reserve` 提升到 **34816**（池 40960，约 2.5 GiB）。实测 25000 token 输出成功（55.3 t/s），视觉 GPU 正常（OCR 6.8 s），峰值 14785 MiB。
+
 ## 19. 128K Decode 调优（双路 Xeon 6146 / DDR4-2133 / V100，2026-11-15）
 
 测试方法：128K prompt（106254 token），生成 128 token，取 `predicted_per_second`；所有配置均重跑 prefill+decode。
@@ -401,39 +441,3 @@ SIGSEGV at 0x0
 性能判断：V100 sm70 无 FP8 硬件，所有路径都要软件反量化；此前 q4_0 KV 已因反量化比 q8_0 慢（32.5 vs 34.0 t/s），FP8 预计同样不会提速，只会增加复杂度。
 
 结论：**不部署 FP8**；生产保持 `q8_0/q8_0` 全注意力 256K（约 34.2 t/s，三暗号 3/3）。如后续确需 FP8，先补 CUDA FA FP8 实例并做 dequant 开销评估。
-
-### 5.1 budget 扫描（128K 请求，16 GB 卡；Bonsai 时代历史数据）
-
-| budget | 启动显存 | 128K 峰值 | 128K prefill / decode | 短路实测 |
-|---|---|---|---|---|
-| 12288 | 7647 MiB | ~7.9 GB | 741.8 / 53.9 | 819.8 t/s @14.3K |
-| 16384 | 7487 | 7901 | 681.5 / 51.3 | 819.8 @14.3K |
-| 24576 | 8015 | 8527 | 598.9 / 48.0 | 754.8 @22.5K |
-| 32768 | 8543 | 8959 | 541.5 / 45.2 | 30.7K 走短路 |
-| 40960 | 9071 | 9503 | 497.7 / 27.3 | 648.9 @38.9K |
-| 49152 | 9599 | 10033 | 463.0 / 25.8 | 604.9 @47.1K |
-
-结论：显存在 16 GB 内不是瓶颈，**池越大长文 prefill 越慢**（换页收缩后的注意力窗口 = 池大小）。
-
-表中的「短路实测」是当时 budget 与其 gen_reserve 组合下的 `0.95 × 池总量`，随档变化；`30.7K`/`38.9K` 不是固定全局阈值。
-
-### 5.2 14 GB 池实验（Bonsai 时代历史数据，按每 GB 收益 5% 规则否决）
-
-| 池大小 | 启动 | 峰值 | 128K prefill/decode | 256K prefill/decode |
-|---|---|---|---|---|
-| 34816 | 8543 | 8929 | 573.2 / 52.5 | 542.8 / 47.5 |
-| 106496 | 13163 | 13605 | 390.8 / 52.6 | - |
-| 131072（适配器上限） | 14623 | 15019 | 387.6 / 23.6 | - |
-| 114688（上限 - 1 GB） | 13691 | 14379 | ~390 | 315.9 / 48.6 |
-
-9.3 GB -> 14.4 GB 显存增加 5.1 GB，长文 prefill 反而下降 32-42%，负相关，按规则放弃。
-
-### 17.4 长输出中断修复（2026-11-15）
-
-- 现象：网页端输出到约 10K/3K token 停止，报 `Stream resume produced no new bytes`；服务端日志为 `Context size has been exceeded` / `failed to find a memory slot`，总 token 约 16-17K。
-- 原因：KVMem 池 18432（阈值 17510）；WebUI 默认 `max_tokens=-1`，旧短路判据只看 prompt，prompt < 17.5K 即走原生短路（无 host mirror）；prompt+生成超过池上限后无法继续分配 slot，流结束且 UI 续传拿到空。
-- 修复（2026-11-15 二次）：根因是 **MTP 投机解码 + 原生短路径** 的 batch 索引异常（`speculative batch index 1 is not inside the current sub-batch [0, 1)`），随后 KVMem 报 `block 448 has no GPU slot`、`Context size has been exceeded`。现在只要启用投机解码，就禁用原生短路，强制走 KVMem 分页路径；同时 `n_predict <= 0` 时按 `gen_reserve` 预留生成空间。
-- 验证：强制生成 12000 token（`ignore_eos`）成功，55.1 t/s，无 speculative/context 错误；8 轮 Agent 38.6 s（TTFT 29.0 s，decode 46.8 t/s）；短请求不再走短路（`KVMEM_SHORT_BYPASS` = 0）。
-- 追加（2026-11-15）：`gen_reserve` 从 12288 提高到 **18432**（池 24576），解决生成阶段 slot 容量不足；经 14802 实测 12000 token 输出成功（54.8 t/s），16K 测试也通过（54.1 t/s），无 `no GPU slot` / `Context size exceeded`。
-- 再次追加：18000 token 级 prompt + 12000 token 输出仍会撞到 22.5K 级 slot 上限；`gen_reserve` 进一步提升到 **26624**（池 32768）。经 14802 实测 16202 prompt + 12000 输出 = 28202 token 成功（33.4 t/s），无 slot/context 错误；256K prompt 仍可正常预填（487.8 t/s）。
-- 2026-11-15 最终：22000 token 级输出仍会撞 22K slot 上限；`gen_reserve` 提升到 **34816**（池 40960，约 2.5 GiB）。实测 25000 token 输出成功（55.3 t/s），视觉 GPU 正常（OCR 6.8 s），峰值 14785 MiB。
