@@ -769,16 +769,34 @@ git push -u origin clean-main     # 分支名按需修改
 
 ### 18.1 生产 14803
 
-`/srv/llama_agent/start-llama-14803.sh [1|2]`
+仓库内：`deploy/start-llama-14803.sh [1|2]`
 
-| 参数 | 模型 | KVMem 池 | 特性 |
+| 参数 | 模型 | 默认 KVMem 池 | 特性 |
 |---|---|---|---|
-| 1（默认） | Qwen3.8-27B GSQ IQ3_XXS-mtp + mmproj BF16 | 6144 + 12288 | MTP n-max 2、q8_0 KV、视觉、reasoning |
+| 1（默认） | Qwen3.8-27B GSQ IQ3_XXS-mtp + mmproj BF16 | 6144 + 34816 | MTP n-max 2 + draft window 4096、q8_0 KV、视觉、reasoning |
 | 2 | Ternary Bonsai 2 27B PTQ1_0 + mmproj Q8_0 | 12288 + 22528 | 无投机、视觉、reasoning |
 
-- 预览命令：`DRY_RUN=1 /srv/llama_agent/start-llama-14803.sh 1`
-- 环境变量选择：`MODEL_CHOICE=2 /srv/llama_agent/start-llama-14803.sh`
-- 备份：`.bak-qwen38`（MTP 配置）、`.bak-bonsai`（Bonsai 配置）
+GSQ 档支持 `KV_PROFILE`：
+
+| KV_PROFILE | KVMem 池 | Decode | 用途 |
+|---|---|---|---|
+| `default` | 6144 + 34816 | 34-57 tok/s | 全注意力、23K+ 长输出 |
+| `fast` | 4096 + 12288 | 约 52 tok/s | window 2048，日常对话 |
+| `256k` | 8192 + 4096 | 约 34 tok/s | 256K 精确档，输出上限约 4K |
+
+用法：
+
+```bash
+API_KEY_FILE=/srv/llama_agent/api_key.txt ./deploy/start-llama-14803.sh 1
+MODEL_CHOICE=2 API_KEY=... ./deploy/start-llama-14803.sh
+KV_PROFILE=fast API_KEY_FILE=... ./deploy/start-llama-14803.sh 1
+DRY_RUN=1 API_KEY=x ./deploy/start-llama-14803.sh 1
+```
+
+- `API_KEY` 或 `API_KEY_FILE` 二选一；脚本不内置 key
+- `MODEL_DIR` 默认 `/srv/models`，可用 `GSQ_MODEL` / `BONSAI_MODEL` / `MMPROJ` 覆盖
+- `CPUSET` 默认 `0-11,24-35`，`PORT` 默认 14803
+- 生产机仍可用 `/srv/llama_agent/start-llama-14803.sh` 包装同一组参数；备份 `.bak-qwen38` / `.bak-bonsai`
 
 ### 18.2 公开一键脚本
 
