@@ -598,6 +598,8 @@ b9620c5 server : stop generation when the client disconnects
 
 ## 10. 基准与复现脚本
 
+完整的速度/质量矩阵见 [BENCHMARK.md](BENCHMARK.md)（按 GSQ / Bonsai / KV 精度 / Window 分表，区分 prefill 与 decode）。
+
 都在 `docs/kvmem-prism/scripts/`：
 
 | 脚本 | 用途 |
@@ -617,6 +619,7 @@ b9620c5 server : stop generation when the client disconnects
 | `deploy/start-llama-prism.sh` | 回滚：无 KVMem/视觉，131072 ctx |
 | `deploy/trim_proxy.mjs` | 14802 代理（断连中止、tool 裁剪、灰度预留） |
 | `deploy/download-models.sh` | 从 Hugging Face 下载模型与视觉塔 |
+| `BENCHMARK.md` | 最新模型/上下文/精度/窗口基准 |
 
 用法示例：
 
