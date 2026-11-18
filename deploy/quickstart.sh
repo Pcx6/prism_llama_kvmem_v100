@@ -7,6 +7,8 @@
 set -euo pipefail
 
 TAG="${TAG:-v0.1.0}"
+KV_PROFILE="${KV_PROFILE:-default}"
+CPUSET="${CPUSET:-0-11,24-35}"
 REPO="${REPO:-Pcx6/prism_llama_kvmem_v100}"
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
 DEST="${DEST:-$HOME/.local/opt/prism_kvmem}"
@@ -38,8 +40,15 @@ case "$CHOICE" in
     MODEL_FILE="Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf"
     MMPROJ_FILE="mmproj-Qwen3.8-27B-BF16.gguf"
     ALIAS="Qwen3.8-27B-GSQ-RCO-IQ3_XXS"
-    KV_BUDGET=6144; KV_GEN=12288
-    EXTRA=(--spec-type draft-mtp --spec-draft-n-max 2 --cache-type-k q8_0 --cache-type-v q8_0)
+    KV_BUDGET=6144; KV_GEN=34816
+    KVPOL=()
+    EXTRA=(--spec-type draft-mtp --spec-draft-n-max 2 --spec-draft-window 4096 --cache-type-k q8_0 --cache-type-v q8_0)
+    case "$KV_PROFILE" in
+      fast)  KV_BUDGET=4096; KV_GEN=12288; KVPOL=(--kvmem-method recency --kv-window 2048 --kv-sink 512) ;;
+      256k)  KV_BUDGET=8192; KV_GEN=4096; KVPOL=() ;;
+      default) ;;
+      *) echo "invalid KV_PROFILE '$KV_PROFILE' (fast|256k|default)" >&2; exit 2 ;;
+    esac
     ;;
   2|bonsai|bonsai-2)
     CHOICE=bonsai
@@ -48,6 +57,7 @@ case "$CHOICE" in
     MMPROJ_FILE="Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf"
     ALIAS="Bonsai-2-27B"
     KV_BUDGET=12288; KV_GEN=22528
+    KVPOL=()
     EXTRA=()
     ;;
   *)
@@ -66,7 +76,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   echo "[dry-run] model=$CHOICE repo=$REPO_ID"
   echo "[dry-run] model_file=$MODELS/$MODEL_FILE"
   echo "[dry-run] mmproj=$MODELS/$MMPROJ_FILE"
-  echo "[dry-run] alias=$ALIAS kv_budget=$KV_BUDGET kv_gen=$KV_GEN extra=${EXTRA[*]:-none}"
+  echo "[dry-run] alias=$ALIAS kv_profile=$KV_PROFILE kv_budget=$KV_BUDGET kv_gen=$KV_GEN extra=${EXTRA[*]:-none} pol=${KVPOL[*]:-none}"
   exit 0
 fi
 if [ ! -x "$DEST/bin/llama-server" ]; then
@@ -95,10 +105,12 @@ echo "[quickstart] model: $CHOICE"
 echo "[quickstart] API key: $API_KEY"
 echo "[quickstart] endpoint: http://$HOST:$PORT/v1/chat/completions"
 export LD_LIBRARY_PATH="$DEST/bin"
-exec "$DEST/bin/llama-server" \
+RUN=()
+if command -v taskset >/dev/null 2>&1 && [ -n "$CPUSET" ]; then RUN=(taskset -c "$CPUSET"); fi
+exec "${RUN[@]}" "$DEST/bin/llama-server" \
   -m "$MODELS/$MODEL_FILE" --mmproj "$MODELS/$MMPROJ_FILE" \
   "${EXTRA[@]}" \
   -a "$ALIAS" -c 262144 -ngl 99 -t 24 -np 1 --reasoning on \
   -ub 1024 -b 4096 -fa on --cache-reuse 256 --cache-ram 0 -ctxcp 0 \
-  --kvmem --kvmem-budget "$KV_BUDGET" --kvmem-gen-reserve "$KV_GEN" --kvmem-idle-ttl 86400 \
+  --kvmem --kvmem-budget "$KV_BUDGET" --kvmem-gen-reserve "$KV_GEN" "${KVPOL[@]}" --kvmem-idle-ttl 86400 \
   --host "$HOST" --port "$PORT" --api-key "$API_KEY"
