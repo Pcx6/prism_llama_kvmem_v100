@@ -68,6 +68,7 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 | `REPO` | 仓库根 | 脚本根目录 |
 | `MODEL` | 必需 | GSQ IQ3_XXS-mtp gguf 路径（Bonsai 用 `BONSAI_MODEL`） |
 | `MMPROJ` | 必需 | 视觉塔路径（GSQ 用 BF16，Bonsai 用 Q8_0） |
+| `ALIAS` | 由脚本设置 | API model 名；GSQ `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`，Bonsai `Bonsai-2-27B`。`start-llama.sh` 读环境，14803/quickstart 按 1/2 自设 |
 | `API_KEY` | 必需 | 客户端 Bearer token（放在仓库外） |
 | `API_KEY_FILE` | - | 存放 API_KEY 的文件路径（示例） |
 | `KVMEM_ROOT` | - | kvmem-root 源码路径（仅构建 KVMem 时） |
@@ -106,14 +107,14 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 
 ```bash
 git clone https://github.com/Pcx6/prism_llama_kvmem_v100.git && cd prism_llama_kvmem_v100
-cp .env.example .env          # 填入 MODEL/MMPROJ/API_KEY/KVMEM_ROOT（.env 已被 .gitignore）
+cp .env.example .env          # 填入 MODEL/MMPROJ/API_KEY；KVMEM_ROOT 仅构建时 export（.env 已被 .gitignore）
 ./deploy/download-models.sh   # 默认下载到 models/
 set -a; . ./.env; set +a
 ```
 
 KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确认其许可。
 
-注意：`.env.example` 仍是 Bonsai legacy 默认（PTQ1_0 + Q8_0）。GSQ 主线请按 4.0 的路径覆盖 `MODEL`/`MMPROJ`，不要直接沿用 `.env.example` 的模型值。
+注意：`.env.example` 已是 GSQ 默认；Bonsai legacy（PTQ1_0 + Q8_0）在注释块。切到 Bonsai 时先注释上方 GSQ 块，再取消 Bonsai 注释。`start-llama-14803.sh` 和 `quickstart.sh` 由 1/2 选择自设 ALIAS，不读取 `.env`。
 
 
 ## 1. 生产现状速览
@@ -133,7 +134,7 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 | 显存 | 启动约 13.5 GiB；长输出峰值约 14.8 GiB / 16 GB |
 | 长文（**prefill** tok/s） | 117K 约 549；226K 约 488（不是 decode） |
 | 128K decode | 57.8 tok/s（draft window 4096，draft 204/152） |
-| 短请求 decode | 700 token 约 61.1 tok/s（2K 上下文） |
+| 短请求 decode | 2K prompt 1962 约 51.4 tok/s（当前 default；61.1 为历史调优档，见 1.4） |
 | 8 轮 Agent | 27.5-31.2 s（TTFT 17.9-21.2 s，后段 47-50 tok/s） |
 | 视觉 | OCR 正常（14802），TTFT 约 3.9-7.9 s |
 | KV 空闲回收 | `--kvmem-idle-ttl 86400`（1 天）；日志 `KVMEM_IDLE_EVICT` |
