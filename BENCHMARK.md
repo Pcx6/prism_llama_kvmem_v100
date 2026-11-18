@@ -13,25 +13,25 @@
 | 投机解码 | MTP n-max 2，`--spec-draft-window 4096`（MTP target slot 窗口，不是检索 `--kv-window`；除非注明） |
 | 上下文 | 262144 |
 | 测量 | 非流式 /v1/chat/completions，cache_prompt=false，取 timings.predicted_per_second；prefill 取 prompt_per_second |
-| 构建 commit | TODO(maintainer)（各次运行未逐条记录） |
-| 二进制 sha256 | TODO(maintainer)（当前不再分发二进制） |
+| 构建 commit | 未逐条归档；bench 环境用 `git rev-parse HEAD` 记录 |
+| 二进制 sha256 | 源码构建，由构建者本地记录；仓库不分发二进制 |
 
 decode 与 prefill 是不同指标，不能混用。
 
 ## 1.1 统一表头与汇总矩阵
 
-后续明细表保留原始列；跨表汇总使用以下字段。缺失字段显式写 `TODO(maintainer)`，不补猜值。
+后续明细表保留原始列；跨表汇总使用以下字段。缺失字段写 `未记录` / `source-only`，不补猜值。
 
 | profile | 指标(decode/prefill/TTFT) | 冷/热 | ctx | MTP on/off | commit | 二进制 sha256 | 复跑次数 |
 |---|---|---|---|---|---|---|---|
-| GSQ default | decode 51.4 | 冷 | 2K | on | TODO(maintainer) | TODO(maintainer) | 1 |
-| GSQ default | decode 50.8 | 冷 | 16K | on | TODO(maintainer) | TODO(maintainer) | 1 |
-| GSQ default | decode 57.8 | 冷 | 106K | on | TODO(maintainer) | TODO(maintainer) | 1 |
-| GSQ default | decode 57.0 | 冷 | 261K | on | TODO(maintainer) | TODO(maintainer) | 1 |
-| GSQ default | decode 34.2（修复前） | 冷 | 261K | off | TODO(maintainer) | TODO(maintainer) | 1 |
-| GSQ fast | decode 约 52 | 冷 | 106K | on | TODO(maintainer) | TODO(maintainer) | 1 |
-| Bonsai legacy | decode 34-35 | 冷 | 106K | off | TODO(maintainer) | TODO(maintainer) | 历史 |
-| GSQ default | prefill 549 | 冷 | 117K | on | TODO(maintainer) | TODO(maintainer) | 1 |
+| GSQ default | decode 51.4 | 冷 | 2K | on | 未记录 | source-only | 1 |
+| GSQ default | decode 50.8 | 冷 | 16K | on | 未记录 | source-only | 1 |
+| GSQ default | decode 57.8 | 冷 | 106K | on | 未记录 | source-only | 1 |
+| GSQ default | decode 57.0 | 冷 | 261K | on | 未记录 | source-only | 1 |
+| GSQ default | decode 34.2（修复前） | 冷 | 261K | off | 未记录 | source-only | 1 |
+| GSQ fast | decode 约 52 | 冷 | 106K | on | 未记录 | source-only | 1 |
+| Bonsai legacy | decode 34-35 | 冷 | 106K | off | 未记录 | source-only | 历史 |
+| GSQ default | prefill 549 | 冷 | 117K | on | 未记录 | source-only | 1 |
 
 冷 = 新 prompt、`cache_prompt=false`；热 = 复用前缀。TTFT 单列时以 `s` 为单位。明细表保留原始列；commit/二进制 sha256/复跑次数字段见本矩阵，缺失项为 TODO。
 
@@ -55,7 +55,7 @@ decode 与 prefill 是不同指标，不能混用。
 | 38K + 2K 输出，默认水位 | 38064 | 524.2 | 53.5 | 1784/1106 | 不启用降级水位 |
 | 106K | 106254 | 451.4 | **57.8** | 204/152 | 全注意力，三暗号 3/3 |
 | 250K | 261503 | 400.3 | **57.0** | 144/108 | 全注意力，三暗号 3/3 |
-| 250K，修复前 | 261503 | 588.9 | 34.2 | 0 | MTP draft 未生效 |
+| 250K，修复前 | 261503 | 588.9 | 34.2 | 0 | MTP draft 未生效；该 prefill 与 HISTORY 16.2 的 226K 数值相同，来源待核 TODO(maintainer) |
 
 106K/261K 质量行使用同一组暗号：`START-ULTRA-256`、`MIDDLE-ULTRA-256`（约 125K）、`END-ULTRA-256`；语料为 261503 token 合成文本。
 
