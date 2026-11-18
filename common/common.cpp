@@ -1472,6 +1472,8 @@ common_init_result_ptr common_init_from_params(common_params & params, bool mode
         }
         kp.method        = params.kvmem_method >= 0 ? params.kvmem_method : 1;
         kp.gpu_memory_ratio  = params.kvmem_gpu_ratio;
+        kp.gpu_high_watermark = params.kvmem_high_watermark;
+        kp.gpu_low_watermark  = params.kvmem_low_watermark;
         kp.cpu_bytes         = (uint64_t) params.kvmem_cpu_gb   << 30;
         kp.payload_host_bytes = (uint64_t) params.kvmem_host_mib << 20;
         kp.query_begin = -1;
