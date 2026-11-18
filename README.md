@@ -28,7 +28,7 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 不提供预编译二进制，避免在 adapter 许可未明时再分发 `libkvmem`。
 
 
-> 历史章节中的速度/显存数字属于当时的 profile 与 commit；当前口径以 1.3/1.4 和 [BENCHMARK.md](BENCHMARK.md) 为准，历史行不删除，只作背景。
+
 
 本仓库是 Prism（qwen35 架构 27B 三值量化模型）的 llama.cpp 分支，把 KVMem 主机侧 KV 换页适配器编译进 Prism，并在此基础上完成：
 请求级检索 span 注入、短上下文短路、前缀复用、多模态视觉、以及生产部署 14803 的运维脚本。
@@ -38,7 +38,7 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 > 2026-11-15：API 模型名已从 `Bonsai-2-27B` 改为 `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`（对应 GSQ IQ3_XXS-mtp 权重）。旧名不再作为别名返回，请更新客户端。
 
 
-> 历史实验（池扫描、窗口驱逐、FP8、早期 MTP 等）已归档到 [docs/HISTORY.md](docs/HISTORY.md)。当前配置/指标只以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准。
+> 当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 0. 仓库说明与获取权重
 
@@ -181,7 +181,8 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 
 | 指标 | 数值 | ctx | profile | 冷/热 |
 |---|---|---|---|---|
-| decode | 61.1 | 2K | GSQ default（MTP） | 冷 |
+| decode | 51.4 | 2K（prompt 1962） | GSQ default（MTP） | 冷 |
+| decode | 61.1 | 2K 短请求（输出 700，含思维链） | **历史调优档**（池 18432，非当前 default） | 冷 |
 | decode | 65.2 | 视觉 OCR（ctx TODO(maintainer)） | GSQ default（MTP） | 热/视觉请求 |
 | decode | 约 57 | 106K / 261K | GSQ default（draft window 4096） | 冷 |
 | decode | 约 52 | 106K | GSQ fast（window 2048） | 冷 |
@@ -236,7 +237,7 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 
 ## 3. 构建
 
-环境（本机实测）：V100 16 GB，CUDA 12.8.93（`/usr/local/cuda-12.8/bin/nvcc`），gcc 14.2.0，CMake 3.31.6，sm_70，24 线程。CUDA 12.9 是最后一个支持 sm_70 离线编译的 12.x；CUDA 13 不再支持 sm_70。构建环境和提交基线见 `ci/README.md`、`ci/check-env.sh`。 仓库 CI（`.github/workflows/ci.yml`）只做 `GGML_CUDA=OFF` 的 CPU 构建，不代表 V100 已验证；V100 构建需本机/自建 runner 按 `ci/Dockerfile` 复现。构建 commit 用 `git rev-parse HEAD` 记录，产物 sha256 暂无归档：`TODO(maintainer)`。
+环境（本机实测）：V100 16 GB，CUDA 12.8.93（`/usr/local/cuda-12.8/bin/nvcc`），gcc 14.2.0，CMake 3.31.6，sm_70，24 线程。CUDA 12.9 是最后一个支持 sm_70 离线编译的 12.x；CUDA 13 不再支持 sm_70。构建环境和提交基线见 `ci/README.md`、`ci/check-env.sh`。 仓库 CI（`.github/workflows/ci.yml`）只做 `GGML_CUDA=OFF` 的 CPU 构建，不代表 V100 已验证；V100 构建需本机/自建 runner 按 `ci/Dockerfile` 复现。构建 commit 由 `git rev-parse HEAD` 记录；产物 sha256 由构建者本地记录（仓库不分发二进制）。
 
 ```bash
 cd $REPO
@@ -405,7 +406,7 @@ Bonsai（legacy，无投机）：`--kvmem-budget 12288 --kvmem-gen-reserve 22528
 | `--kvmem-gen-reserve` | 1024 | 34816（GSQ）/ 22528（Bonsai） | 生成预留 |
 | `--kvmem-block-tokens` | 32 | 32 | 块大小 |
 | `--kvmem-sink-tokens` | 0 | 0 | 固定保留前缀 |
-| `--kvmem-recent-tokens` | 64 | 4096（MTP window 生效） | 固定保留后缀 |
+| `--kvmem-recent-tokens` | 64 | 4096（MTP window 生效） | 固定保留后缀；即 `--spec-draft-window` 的 draft 尾部窗口，不是第 4 节 recency 的 `--kv-window` |
 | `--kvmem-method` | retrieval | retrieval | retrieval/recency |
 | `--kvmem-host-mib` | 0 | 0 | host KV 配额，0 不限 |
 | `--kvmem-cpu-gb` | 0 | 0 | CPU spill，0 关 |
@@ -417,7 +418,7 @@ Bonsai（legacy，无投机）：`--kvmem-budget 12288 --kvmem-gen-reserve 22528
 
 ## 6. 历史实验：极限上下文实测（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 7. 已知限制
 
@@ -433,7 +434,7 @@ Bonsai（legacy，无投机）：`--kvmem-budget 12288 --kvmem-gen-reserve 22528
 
 ## 8. 历史实验：故障档案（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 9. 代码地图
 
@@ -452,6 +453,8 @@ Bonsai（legacy，无投机）：`--kvmem-budget 12288 --kvmem-gen-reserve 22528
 | `tools/server/server-queue.{h,cpp}` | 队列空闲 tick（驱动 TTL 扫描） |
 | `tools/server/server-task.h` | 任务级 `should_stop`（客户端断连） |
 | `src/llama-kvmem-hooks.h`（adapter） | `remove_logical` / `truncate_cached` / `store_*` 等钩子 |
+
+> 以下 hash 是 2026-11-07 `git filter-repo` 清理前的标识，当前仓库可能无法 `git show`；仅用于事件对照，定位以“文件 + 函数名”为准。
 
 主要提交（由旧到新）：
 
@@ -546,11 +549,11 @@ python3 docs/kvmem-prism/scripts/test_vision.py --port 14802 --key "$KEY" \
 
 ## 13. 历史实验：验收结论（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 14. 历史实验：上传 GitHub 前检查（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 15. 双后端路由（14803 Prism / 14806 1Cat-vLLM）
 
@@ -594,11 +597,11 @@ python3 docs/kvmem-prism/scripts/test_vision.py --port 14802 --key "$KEY" \
 
 ## 16. 历史实验：生产模型切换（Bonsai 时代）（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 17. 历史实验：MTP 投机解码 + 视觉（首版）（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 18. 一键切换模型（2026-11-15）
 
@@ -615,7 +618,7 @@ GSQ 档支持 `KV_PROFILE`：
 
 | KV_PROFILE | KVMem 池 | Decode | 用途 |
 |---|---|---|---|
-| `default` | 6144 + 34816 | 34-57 tok/s | 全注意力、23K+ 长输出 |
+| `default` | 6144 + 34816 | 约 57 tok/s（修复后；34-35 为修复前对照） | 全注意力、23K+ 长输出 |
 | `fast` | 4096 + 12288 | 约 52 tok/s | window 2048，日常对话 |
 | `256k` | 8192 + 4096 | 约 34 tok/s | 256K 精确档，输出上限约 4K |
 
@@ -639,23 +642,23 @@ DRY_RUN=1 API_KEY=x ./deploy/start-llama-14803.sh 1
 
 ## 19. 历史实验：128K Decode 调优（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 20. 历史实验：KVMem 窗口驱逐（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 21. 历史实验：Window/Sink 扫描（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 22. 历史实验：256K 全注意力与混合精度 KV（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 23. 历史实验：FP8 支持尝试（已归档）
 
-本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径见第 1、5.3、25、26 节和 [BENCHMARK.md](BENCHMARK.md)。
+本节原始实测与配置已移入 [docs/HISTORY.md](docs/HISTORY.md)；当前口径以第 1、5.3、18、25、26 节和 [BENCHMARK.md](BENCHMARK.md) 为准；历史实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 
 ## 24. 根因剖析：计算、HBM 还是主机内存（修复前，2026-11-17）
 
