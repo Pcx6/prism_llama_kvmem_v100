@@ -4,7 +4,7 @@
 
 ## 源码安装
 
-> 二进制 Release 已撤回：KVMem adapter 未提供再分发许可，仓库只发布源码。需要用户自备 `KVMEM_ROOT` 编译。
+> 二进制 Release 已撤回：KVMem adapter 未提供再分发许可，仓库只发布源码。需要用户自备 `KVMEM_ROOT` 编译。 许可与再分发限制见 0.3；本脚本只构建源码，不下载预编译二进制。
 
 ```bash
 git clone https://github.com/Pcx6/prism_llama_kvmem_v100.git
@@ -16,8 +16,8 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 
 | 选项 | 模型 | 说明 |
 |---|---|---|
-| `1`（默认） | Qwen3.8-27B GSQ IQ3_XXS | MTP + 视觉，短文本 decode 约 61 tok/s |
-| `2` | Ternary Bonsai 2 27B PTQ1_0 | 旧模型 + 视觉，decode 约 33-35 tok/s |
+| `1`（默认） | Qwen3.8-27B GSQ IQ3_XXS | MTP + 视觉，2K 上下文 decode 约 61 tok/s |
+| `2` | Ternary Bonsai 2 27B PTQ1_0 | 旧模型 + 视觉，128K decode 约 34-35 tok/s（无 MTP） |
 
 非交互选择：`./deploy/quickstart.sh 2`，或 `MODEL_CHOICE=2 ./quickstart.sh`。GSQ 档可加 `KV_PROFILE=fast`（约 52 tok/s）或 `KV_PROFILE=256k`（256K 精确档）。
 
@@ -27,6 +27,8 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 手动构建见第 3 节；构建环境见 `ci/README.md`。
 不提供预编译二进制，避免在 adapter 许可未明时再分发 `libkvmem`。
 
+
+> 历史章节中的速度/显存数字属于当时的 profile 与 commit；当前口径以 1.3/1.4 和 [BENCHMARK.md](BENCHMARK.md) 为准，历史行不删除，只作背景。
 
 本仓库是 Prism（qwen35 架构 27B 三值量化模型）的 llama.cpp 分支，把 KVMem 主机侧 KV 换页适配器编译进 Prism，并在此基础上完成：
 请求级检索 span 注入、短上下文短路、前缀复用、多模态视觉、以及生产部署 14803 的运维脚本。
@@ -85,12 +87,16 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 | `llama.cpp`（上游） | MIT | 版权见 `AUTHORS`；`LICENSE` 同一份 MIT 文本 |
 | PrismML Prism 分支（上游基线） | MIT | 本仓库基于该分支构建 |
 | `KVMem adapter` | 未随仓库声明许可证 | `llama-kvmem-hooks.h`、`src/adapter/*` 为独立组件，来源方未提供 LICENSE；启用 `-DLLAMA_KVMEM=ON` 前请与提供方确认许可，本项目不为其再分发授权 |
-| 模型权重（Ternary Bonsai 2 27B） | 依 Hugging Face 仓库许可 | 不在本仓库分发，由 `deploy/download-models.sh` 下载 |
-| 视觉塔（mmproj Q8_0） | 依上游模型许可 | 同上 |
+| 模型权重（Qwen3.8-27B GSQ） | 依 Hugging Face 仓库许可 | 默认档；不在本仓库分发，由 `deploy/download-models.sh 1` 下载 |
+| 视觉塔（mmproj BF16） | 依上游模型许可 | GSQ 默认档；同上 |
+| 模型权重（Ternary Bonsai 2 27B） | 依 Hugging Face 仓库许可 | legacy 档；`deploy/download-models.sh 2` |
+| 视觉塔（mmproj Q8_0） | 依上游模型许可 | Bonsai legacy 档 |
 | 预编译二进制 | 已撤回 | 因 KVMem adapter 许可未明，Release 不再分发含 `libkvmem` 的 tar.gz；只提供源码和构建脚本 |
 | 第三方组件（Yukon tokenizer 等） | 随上游模型 | 见模型仓库的 LICENSE/NOTICE |
 
 若你是 KVMem adapter 的版权方并希望补充具体许可证文本，欢迎提 PR 或在 issue 中说明。
+
+> TODO(maintainer): 二选一 —— (a) 保持当前 source-only，Release 不含 `libkvmem`；(b) 取得 adapter 授权后再分发二进制并改写本节与 Release 说明。当前仓库状态为 (a)。
 
 ### 0.4 首次准备
 
@@ -104,6 +110,8 @@ set -a; . ./.env; set +a
 ```
 
 KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确认其许可。
+
+注意：`.env.example` 仍是 Bonsai legacy 默认（PTQ1_0 + Q8_0）。GSQ 主线请按 4.0 的路径覆盖 `MODEL`/`MMPROJ`，不要直接沿用 `.env.example` 的模型值。
 
 
 ## 1. 生产现状速览
@@ -144,6 +152,40 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 | 启动 | `deploy/start-llama-14803.sh 2` 或 `MODEL_CHOICE=2 ...` |
 
 > 历史章节 5.1/5.2 的数字属于 Bonsai 时代的 16 GB 池扫描，不能和 GSQ profile 混用。
+
+### 1.3 符号定义与 profile
+
+- `KV_BUDGET`：GPU 工作集 token 数，程序内置默认 32768。
+- `KV_GEN_RESERVE`：生成预留 token 数。
+- 池总量 = `KV_BUDGET + KV_GEN_RESERVE`。
+- 原生短路阈值 = `0.95 × 池总量`；**MTP 开启时短路不生效**，该阈值只对 Bonsai/无投机档有意义。
+- 显存中的 KV 池 = 池总量 × 64 KiB/token（q8_0，全层 K+V）。
+
+| 参数 | default（GSQ） | fast（GSQ） | 256k（GSQ） | Bonsai legacy |
+|---|---|---|---|---|
+| `KV_BUDGET` | 6144 | 4096 | 8192 | 12288 |
+| `KV_GEN_RESERVE` | 34816 | 12288 | 4096 | 22528 |
+| 池总量 | 40960 | 16384 | 12288 | 34816 |
+| `0.95 × 池` | 38912 | 15564.8 | 11673.6 | 33075 |
+| KV 池显存 | 2.5 GiB | 1.0 GiB | 0.75 GiB | 2.1 GiB |
+
+`32768` 是程序内置的 `--kvmem-budget` 默认，不属于上述四档；`40960` 是 default 的池总量，不是 budget。
+
+`2.1-2.2 GiB`（4.6 节）指 Bonsai 池 34816 × 64 KiB，`2.5 GiB`（1.1 节）指 GSQ 池 40960 × 64 KiB；两者是不同 profile。同理，`9-10 GB` 是 Bonsai 显存，`13.5/14.8 GiB` 是 GSQ 显存。8 轮 Agent 的 `34.0 → 23-24 s` 是 Bonsai/无投机历史，`27.5-31.2 s` 是当前 GSQ MTP 值。
+
+### 1.4 速度数字索引（每条都带条件）
+
+冷 = 新 prompt、`cache_prompt=false`；热 = 复用前缀。除注明外均为非流式 `timings.predicted_per_second`。
+
+| 指标 | 数值 | ctx | profile | 冷/热 |
+|---|---|---|---|---|
+| decode | 61.1 | 2K | GSQ default（MTP） | 冷 |
+| decode | 65.2 | 视觉 OCR（ctx TODO(maintainer)） | GSQ default（MTP） | 热/视觉请求 |
+| decode | 约 57 | 106K / 261K | GSQ default（draft window 4096） | 冷 |
+| decode | 约 52 | 106K | GSQ fast（window 2048） | 冷 |
+| decode | 34-35 | 106K | Bonsai legacy / GSQ MTP 未生效 | 冷 |
+
+128K/256K 的 57 带长上下文条件，且主模型验证全量上下文；详细表见 [BENCHMARK.md](BENCHMARK.md)。
 
 ## 2. 架构
 
@@ -192,7 +234,7 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 
 ## 3. 构建
 
-环境（本机实测）：V100 16 GB，CUDA 12.8.93（`/usr/local/cuda-12.8/bin/nvcc`），gcc 14.2.0，CMake 3.31.6，sm_70，24 线程。CUDA 12.9 是最后一个支持 sm_70 离线编译的 12.x；CUDA 13 不再支持 sm_70。构建环境和提交基线见 `ci/README.md`、`ci/check-env.sh`。
+环境（本机实测）：V100 16 GB，CUDA 12.8.93（`/usr/local/cuda-12.8/bin/nvcc`），gcc 14.2.0，CMake 3.31.6，sm_70，24 线程。CUDA 12.9 是最后一个支持 sm_70 离线编译的 12.x；CUDA 13 不再支持 sm_70。构建环境和提交基线见 `ci/README.md`、`ci/check-env.sh`。 仓库 CI（`.github/workflows/ci.yml`）只做 `GGML_CUDA=OFF` 的 CPU 构建，不代表 V100 已验证；V100 构建需本机/自建 runner 按 `ci/Dockerfile` 复现。构建 commit 用 `git rev-parse HEAD` 记录，产物 sha256 暂无归档：`TODO(maintainer)`。
 
 ```bash
 cd $REPO
@@ -346,6 +388,8 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 | 49152 | 9599 | 10033 | 463.0 / 25.8 | 604.9 @47.1K |
 
 结论：显存在 16 GB 内不是瓶颈，**池越大长文 prefill 越慢**（换页收缩后的注意力窗口 = 池大小）。
+
+表中的「短路实测」是当时 budget 与其 gen_reserve 组合下的 `0.95 × 池总量`，随档变化；`30.7K`/`38.9K` 不是固定全局阈值。
 
 ### 5.2 14 GB 池实验（Bonsai 时代历史数据，按每 GB 收益 5% 规则否决）
 
@@ -904,7 +948,7 @@ DRY_RUN=1 API_KEY=x ./deploy/start-llama-14803.sh 1
 | 旧全注意力 + 池 40960 | 34.5 | 446 | MTP 深上下文空闲 |
 | 池 16384 retrieval（偶发 draft 错误） | 54.4 | 566 | 不稳定，draft_impl 报错 |
 | recency + window 8192 / sink 1024 | 46.5 | 598 | 稳定，质量通过 |
-| recency + window 4096 | 46.4 | 599 | 稳定 |
+| recency + `--kv-window 4096` | 46.4 | 599 | 稳定 |
 | recency + window 2048 / sink 512 | **52.2**（生产 14802） | 584 | 稳定，质量通过 |
 | recency n-max 3 | 45.1 | 598 | 更慢 |
 
@@ -1061,7 +1105,7 @@ SIGSEGV at 0x0
 |---|---|---|---|
 | 128K 全注意力，修复前 | 34.5 | 0 | 3/3 |
 | 128K 全注意力，`--spec-draft-window 4096` | **57.8** | 204/152 | 3/3 |
-| 250K 全注意力，window 4096 | **57.0** | 144/108 | 3/3（含 MIDDLE-ULTRA-256） |
+| 250K 全注意力，`--spec-draft-window 4096` | **57.0** | 144/108 | 3/3（含 MIDDLE-ULTRA-256） |
 | 16K 全注意力，默认 window | 50.8 | 51/36 | - |
 | 128K，window 2048 | 35.0 | 0 | - |
 
