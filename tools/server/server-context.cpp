@@ -2905,9 +2905,10 @@ private:
             max_free_b = std::max(max_free_b, free_b);
             total_free_b += free_b;
         }
-        // all GPUs low: one small card occupied by another process must not evict every second
-        return total_free_b > 0 && max_free_b < (size_t) 1024 * 1024 * 1024;
-        return false;
+        // Only treat critically low free VRAM as OOM. A V100 running the
+        // production pool normally has less than 1 GiB free, which must not
+        // evict the idle slot and destroy prefix cache between tool calls.
+        return total_free_b > 0 && max_free_b < (size_t) 256 * 1024 * 1024;
     }
 #endif
 
