@@ -1,33 +1,44 @@
-# CI
+# CI / 构建环境基线
 
-This CI implements heavy-duty workflows that run on self-hosted runners. Typically the purpose of these workflows is to
-cover hardware configurations that are not available from Github-hosted runners and/or require more computational
-resource than normally available.
+sm_70 构建不是任意 CUDA 版本都能复现，需要固定：
 
-It is a good practice, before publishing changes to execute the full CI locally on your machine. For example:
+- CUDA 12.9 是最后一个支持 sm_70 离线编译的 12.x；CUDA 13 已移除 sm_70 离线目标。
+- 官方容器常只带 PTX 或较新 gcc；显式设置 `-DCMAKE_CUDA_ARCHITECTURES=70`。
+- nvcc 与 gcc 主版本组合需要固定。
+- 本分支的 Volta FATTN 改动随仓库提交；自定义 patch 必须记录 commit。
 
-```bash
-mkdir tmp
+## 本机实测基线
 
-# CPU-only build
-bash ./ci/run.sh ./tmp/results ./tmp/mnt
+| 项目 | 值 |
+|---|---|
+| GPU | V100 16 GB, sm_70 |
+| CUDA | 12.8.93 (`/usr/local/cuda-12.8/bin/nvcc`) |
+| gcc | 14.2.0 |
+| CMake | 3.31.6 |
+| 系统 | Linux x86_64 |
+| 仓库提交 | `git rev-parse HEAD`（构建日志必须记录） |
 
-# with CUDA support
-GG_BUILD_CUDA=1 bash ./ci/run.sh ./tmp/results ./tmp/mnt
+运行 `ci/check-env.sh` 打印当前环境；CI 日志应包含该输出和 commit hash。
 
-# with SYCL support
-source /opt/intel/oneapi/setvars.sh
-GG_BUILD_SYCL=1 bash ./ci/run.sh ./tmp/results ./tmp/mnt
+## 构建
 
-# with MUSA support
-GG_BUILD_MUSA=1 bash ./ci/run.sh ./tmp/results ./tmp/mnt
+~~~bash
+cmake -S . -B build-sm70 \
+  -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=70 \
+  -DLLAMA_KVMEM=ON -DLLAMA_KVMEM_ROOT="$KVMEM_ROOT" \
+  -DLLAMA_BUILD_SERVER=ON -DGGML_NATIVE=ON
+cmake --build build-sm70 -j "$(nproc)" --target llama-server
+~~~
 
-# etc.
-```
+`KVMEM_ROOT` 不随仓库提供；CI 应只读挂载或作为构建参数，不要提交进仓库。
 
-# Adding self-hosted runners
+## Docker
 
-- Add a self-hosted `ggml-ci` workflow to [[.github/workflows/build.yml]] with an appropriate label
-- Request a runner token from `ggml-org` (for example, via a comment in the PR or email)
-- Set-up a machine using the received token ([docs](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners))
-- Optionally update [ci/run.sh](https://github.com/ggml-org/llama.cpp/blob/master/ci/run.sh) to build and run on the target platform by gating the implementation with a `GG_BUILD_...` env
+~~~bash
+docker build -f ci/Dockerfile -t prism-kvmem:sm70 .
+docker run --gpus all -v "$PWD:/src" -v "$KVMEM_ROOT:/kvmem:ro" -w /src \
+  prism-kvmem:sm70 bash -lc 'KVMEM_ROOT=/kvmem ./ci/check-env.sh && \
+  cmake -S . -B build-sm70 -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=70 \
+    -DLLAMA_KVMEM=ON -DLLAMA_KVMEM_ROOT=/kvmem -DLLAMA_BUILD_SERVER=ON -DGGML_NATIVE=ON && \
+  cmake --build build-sm70 -j "$(nproc)" --target llama-server'
+~~~
