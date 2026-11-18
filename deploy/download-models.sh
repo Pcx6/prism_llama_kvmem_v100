@@ -4,9 +4,23 @@
 set -euo pipefail
 
 DEST="${DEST:-models}"
-REPO_ID="${REPO_ID:-prism-ml/Ternary-Bonsai-2-27B-gguf}"
-MODEL_FILE="${MODEL_FILE:-Ternary-Bonsai-2-27B-PTQ1_0.gguf}"
-MMPROJ_FILE="${MMPROJ_FILE:-Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf}"
+CHOICE="${1:-${MODEL_CHOICE:-1}}"
+case "$CHOICE" in
+  1|gsq|qwen)
+    REPO_ID="${REPO_ID:-ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF}"
+    MODEL_FILE="${MODEL_FILE:-Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf}"
+    MMPROJ_FILE="${MMPROJ_FILE:-mmproj-Qwen3.8-27B-BF16.gguf}"
+    ;;
+  2|bonsai)
+    REPO_ID="${REPO_ID:-prism-ml/Ternary-Bonsai-2-27B-gguf}"
+    MODEL_FILE="${MODEL_FILE:-Ternary-Bonsai-2-27B-PTQ1_0.gguf}"
+    MMPROJ_FILE="${MMPROJ_FILE:-Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf}"
+    ;;
+  *)
+    echo "usage: $0 [1|2]  (1=GSQ default, 2=Bonsai legacy)" >&2
+    exit 2
+    ;;
+esac
 
 mkdir -p "$DEST"
 python3 -m pip install -q -U "huggingface_hub[cli]"
