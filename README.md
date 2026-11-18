@@ -800,7 +800,7 @@ DRY_RUN=1 API_KEY=x ./deploy/start-llama-14803.sh 1
 
 ### 18.2 公开一键脚本
 
-`deploy/quickstart.sh`（Release 资产同名）支持 1/2 选择、交互菜单、`bash -s -- N` 与 `MODEL_CHOICE`；模型缺失时从 Hugging Face 下载，`/srv/models` 已有文件时直接复用。
+`deploy/quickstart.sh`（Release 资产同名）支持 1/2 选择、交互菜单、`bash -s -- N` 与 `MODEL_CHOICE`；GSQ 档支持 `KV_PROFILE=fast|256k|default`，默认 `--spec-draft-window 4096`、池 6144/34816、q8_0 KV；可用 `CPUSET` 绑定 CPU。模型缺失时从 Hugging Face 下载，`/srv/models` 已有文件时直接复用。
 
 ### 17.4 长输出中断修复（2026-11-15）
 
