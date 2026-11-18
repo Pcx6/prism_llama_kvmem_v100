@@ -2,10 +2,14 @@
 
 [![Release](https://img.shields.io/github/v/release/Pcx6/prism_llama_kvmem_v100)](https://github.com/Pcx6/prism_llama_kvmem_v100/releases)
 
-## 快速安装（一键启动）
+## 源码安装
+
+> 二进制 Release 已撤回：KVMem adapter 未提供再分发许可，仓库只发布源码。需要用户自备 `KVMEM_ROOT` 编译。
 
 ```bash
-curl -fL https://github.com/Pcx6/prism_llama_kvmem_v100/releases/download/v0.1.0/quickstart.sh | bash
+git clone https://github.com/Pcx6/prism_llama_kvmem_v100.git
+cd prism_llama_kvmem_v100
+KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 ```
 
 脚本会先让选择模型（也可直接传参）：
@@ -15,14 +19,13 @@ curl -fL https://github.com/Pcx6/prism_llama_kvmem_v100/releases/download/v0.1.0
 | `1`（默认） | Qwen3.8-27B GSQ IQ3_XXS | MTP + 视觉，短文本 decode 约 61 tok/s |
 | `2` | Ternary Bonsai 2 27B PTQ1_0 | 旧模型 + 视觉，decode 约 33-35 tok/s |
 
-非交互选择：`curl ... | bash -s -- 2`，或 `MODEL_CHOICE=2 ./quickstart.sh`。GSQ 档可加 `KV_PROFILE=fast`（约 52 tok/s）或 `KV_PROFILE=256k`（256K 精确档）。
+非交互选择：`./deploy/quickstart.sh 2`，或 `MODEL_CHOICE=2 ./quickstart.sh`。GSQ 档可加 `KV_PROFILE=fast`（约 52 tok/s）或 `KV_PROFILE=256k`（256K 精确档）。
 
-要求：Linux x86_64、NVIDIA **sm_70（V100）** 或兼容驱动、Python 3、至少 20 GB 磁盘。
-脚本会下载二进制包（约 56 MiB）与所选模型/视觉塔（GSQ 约 10.7 GB，Bonsai 约 6.2 GB），生成随机 API key，并在 `14803` 启动服务。
-自定义：`PORT=14803 API_KEY=my-key MODELS=/data/models curl ... | bash`。
-手动构建见第 3 节，Release 说明见 [v0.1.0](https://github.com/Pcx6/prism_llama_kvmem_v100/releases/tag/v0.1.0)。
-如需在执行前审查脚本内容，请查看 [quickstart.sh](https://raw.githubusercontent.com/Pcx6/prism_llama_kvmem_v100/main/deploy/quickstart.sh) 源码。
-Release 资产 `prism_kvmem-v0.1.0-linux-sm70.tar.gz` 的 SHA256：`e2a2e815c09f9e45a69047eade49fa7935177bf6419d60671390ddeb6fac208c`（下载后可用 `sha256sum` 校验）。
+要求：Linux x86_64、NVIDIA **sm_70（V100）**、CUDA 12.8/12.9、gcc 14、CMake 3.31、Python 3、至少 30 GB 磁盘。
+脚本会编译源码（需要 `KVMEM_ROOT`）并下载所选模型/视觉塔（GSQ 约 10.7 GB，Bonsai 约 6.2 GB），生成随机 API key，并在 `14803` 启动服务。
+自定义：`PORT=14803 API_KEY=my-key MODELS=/data/models KVMEM_ROOT=... ./deploy/quickstart.sh`。
+手动构建见第 3 节；构建环境见 `ci/README.md`。
+不提供预编译二进制，避免在 adapter 许可未明时再分发 `libkvmem`。
 
 
 本仓库是 Prism（qwen35 架构 27B 三值量化模型）的 llama.cpp 分支，把 KVMem 主机侧 KV 换页适配器编译进 Prism，并在此基础上完成：
@@ -36,9 +39,9 @@ Release 资产 `prism_kvmem-v0.1.0-linux-sm70.tar.gz` 的 SHA256：`e2a2e815c09f
 ## 0. 仓库说明与获取权重
 
 - 本仓库是 **llama.cpp（MIT）的生产分支**，在此基础上完成 KVMem 适配、短上下文短路、检索、前缀复用、多模态与 TTL，技术细节见后续章节。
-- **模型权重不随仓库分发**（`.gitignore` 排除 `*.gguf`），用 `deploy/download-models.sh` 从 Hugging Face 拉取：
-  - 语言模型：`prism-ml/Ternary-Bonsai-2-27B-gguf` 中的 `Ternary-Bonsai-2-27B-PTQ1_0.gguf`
-  - 视觉塔：同仓库 `Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf`
+- **模型权重不随仓库分发**（`.gitignore` 排除 `*.gguf`），用 `deploy/download-models.sh [1|2]` 从 Hugging Face 拉取：
+  - 1（默认）：`ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF` 的 `Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf` + `mmproj-Qwen3.8-27B-BF16.gguf`
+  - 2（legacy）：`prism-ml/Ternary-Bonsai-2-27B-gguf` 的 `Ternary-Bonsai-2-27B-PTQ1_0.gguf` + `Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf`
 - **KVMem adapter 不在本仓库**：`-DLLAMA_KVMEM=ON` 需要把 `KVMEM_ROOT` 指向 kvmem-root 源码树；不使用 KVMem 时去掉这两个编译选项即可。
 - 许可证：MIT（见 `LICENSE`）；上游贡献规范见 `CONTRIBUTING.md`。
 
@@ -59,8 +62,8 @@ Release 资产 `prism_kvmem-v0.1.0-linux-sm70.tar.gz` 的 SHA256：`e2a2e815c09f
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `REPO` | 仓库根 | 脚本根目录 |
-| `MODEL` | 必需 | PTQ1_0 gguf 路径 |
-| `MMPROJ` | 必需 | 视觉塔 Q8_0 gguf 路径 |
+| `MODEL` | 必需 | GSQ IQ3_XXS-mtp gguf 路径（Bonsai 用 `BONSAI_MODEL`） |
+| `MMPROJ` | 必需 | 视觉塔路径（GSQ 用 BF16，Bonsai 用 Q8_0） |
 | `API_KEY` | 必需 | 客户端 Bearer token（放在仓库外） |
 | `API_KEY_FILE` | - | 存放 API_KEY 的文件路径（示例） |
 | `KVMEM_ROOT` | - | kvmem-root 源码路径（仅构建 KVMem 时） |
@@ -84,39 +87,63 @@ Release 资产 `prism_kvmem-v0.1.0-linux-sm70.tar.gz` 的 SHA256：`e2a2e815c09f
 | `KVMem adapter` | 未随仓库声明许可证 | `llama-kvmem-hooks.h`、`src/adapter/*` 为独立组件，来源方未提供 LICENSE；启用 `-DLLAMA_KVMEM=ON` 前请与提供方确认许可，本项目不为其再分发授权 |
 | 模型权重（Ternary Bonsai 2 27B） | 依 Hugging Face 仓库许可 | 不在本仓库分发，由 `deploy/download-models.sh` 下载 |
 | 视觉塔（mmproj Q8_0） | 依上游模型许可 | 同上 |
-| Release 二进制 | 含 KVMem `libkvmem` | 仅为个人测试构建；KVMem adapter 许可未明，禁止未经授权再分发或商用 |
+| 预编译二进制 | 已撤回 | 因 KVMem adapter 许可未明，Release 不再分发含 `libkvmem` 的 tar.gz；只提供源码和构建脚本 |
 | 第三方组件（Yukon tokenizer 等） | 随上游模型 | 见模型仓库的 LICENSE/NOTICE |
 
 若你是 KVMem adapter 的版权方并希望补充具体许可证文本，欢迎提 PR 或在 issue 中说明。
 
 ### 0.4 首次准备
 
-推荐直接用 Release 的一键脚本（见文首）。源码方式：
+源码方式：
 
 ```bash
-git clone https://github.com/Pcx6/prism_llama_kvmem_v100.git && cd prism_kvmem
-cp .env.example .env          # 填入 MODEL/MMPROJ/API_KEY（.env 已被 .gitignore）
+git clone https://github.com/Pcx6/prism_llama_kvmem_v100.git && cd prism_llama_kvmem_v100
+cp .env.example .env          # 填入 MODEL/MMPROJ/API_KEY/KVMEM_ROOT（.env 已被 .gitignore）
 ./deploy/download-models.sh   # 默认下载到 models/
 set -a; . ./.env; set +a
 ```
 
+KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确认其许可。
+
 
 ## 1. 生产现状速览
 
+当前默认模型是 GSQ IQ3_XXS-mtp；Bonsai 仅作 legacy 保留。两档参数和指标分开列，避免混用。
+
+### 1.1 GSQ IQ3_XXS-mtp（当前默认，2026-11-17 起）
+
 | 项目 | 值 |
 |---|---|
-| 模型 | `/srv/models/Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf`（10.4 GB，qwen35 hybrid GDN + MTP head，262144 ctx） |
+| 模型 | `/srv/models/Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf`（约 10.4 GB，qwen35 hybrid GDN + MTP head，262144 ctx） |
 | 视觉塔 | `/srv/models/mmproj-Qwen3.8-27B-BF16.gguf`（931 MB，GPU offload） |
-| API 名称 | `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`（启动参数 `-a`；旧别名 `Bonsai-2-27B` 已停用） |
-| KVMem | `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 34816`（GPU 池 40960 token，约 2.5 GiB） |
-| 短路阈值 | `0.95 x pool = 38912` token（启用投机解码时不走短路，见 17.4） |
-| 显存 | 启动约 13.5 GiB；长输出峰值 14.8 GiB / 16 GB |
-| 长文 | 117K 约 549 t/s，226K 约 488 t/s（256K 上下文已验证，换页开启） |
-| 短请求 | 代码 700 token decode 61.1 t/s；8 轮 Agent 27.5 s（TTFT 17.9 s） |
-| 视觉 | OCR 正常（14802），TTFT 3.9 s，decode 65.2 t/s |
-| KV 空闲回收 | `--kvmem-idle-ttl 86400`（1 天）；到期释放 host KV，日志 `KVMEM_IDLE_EVICT` |
+| API 名称 | `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`（旧别名 `Bonsai-2-27B` 已停用） |
+| KVMem | `--kvmem-budget 6144 --kvmem-gen-reserve 34816`（池 40960 token，约 2.5 GiB） |
+| 投机解码 | `--spec-type draft-mtp --spec-draft-n-max 2 --spec-draft-window 4096` |
+| 短路 | 启用 MTP 时禁用原生短路（见 2.3、17.4、25） |
+| 显存 | 启动约 13.5 GiB；长输出峰值约 14.8 GiB / 16 GB |
+| 长文（**prefill** tok/s） | 117K 约 549；226K 约 488（不是 decode） |
+| 128K decode | 57.8 tok/s（draft window 4096，draft 204/152） |
+| 短请求 decode | 700 token 约 61.1 tok/s（2K 上下文） |
+| 8 轮 Agent | 27.5-31.2 s（TTFT 17.9-21.2 s，后段 47-50 tok/s） |
+| 视觉 | OCR 正常（14802），TTFT 约 3.9-7.9 s |
+| KV 空闲回收 | `--kvmem-idle-ttl 86400`（1 天）；日志 `KVMEM_IDLE_EVICT` |
 | 回滚 | `$REPO/deploy/start-llama-prism.sh`（原生 prism，无 KVMem/视觉） |
 
+### 1.2 Ternary Bonsai 2 27B PTQ1_0（legacy）
+
+| 项目 | 值 |
+|---|---|
+| 模型 | `/srv/models/Ternary-Bonsai-2-27B-PTQ1_0.gguf`（约 6.2 GB） |
+| 视觉塔 | `Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf` |
+| API 名称 | `Bonsai-2-27B` |
+| KVMem | `--kvmem-budget 12288 --kvmem-gen-reserve 22528`（池 34816，约 2.1 GiB） |
+| 投机解码 | 无 |
+| 短路 | 可用；阈值约 33075 token |
+| 显存 | 启动/峰值约 9.3-9.9 GiB |
+| 128K decode | 约 34-35 tok/s |
+| 启动 | `deploy/start-llama-14803.sh 2` 或 `MODEL_CHOICE=2 ...` |
+
+> 历史章节 5.1/5.2 的数字属于 Bonsai 时代的 16 GB 池扫描，不能和 GSQ profile 混用。
 
 ## 2. 架构
 
@@ -137,14 +164,15 @@ set -a; . ./.env; set +a
 
 注意：span 只对 `/v1/chat/completions` 注入；`/completion`、`/v1/completions`、infill、`/v1/responses` 等走 prompt 末尾 512 token 回退。定位失败时日志为 `KVMEM_REQUEST_SPAN unavailable`，不会静默。
 
-### 2.3 短上下文短路
+### 2.3 短上下文短路（与 MTP 互斥）
 
-- 当请求 token 数 < 池高水位（33075）时，请求完全驻留 GPU，不需要主机镜像：
-  - 不注入 span；`begin_cached_turn / truncate_cached` 后立即 `end_prefill_capture`，prefill 不再 capture/harvest K/Q；
-  - prefill 结束跳过 `apply_retrieval / pin_working_set / attention_begin`；
-  - 日志 `KVMEM_SHORT_BYPASS tokens=...`。
-- 跨过阈值（例如 8K 轮次之后接 40K）时日志出现 `KVMEM_BYPASS_EXIT`，强制整体重算一次，保证主机镜像完整。
-- 该短路把 8 轮 Agent 从 34.0 s 降到 23-24 s。
+- 原生短路的判据是 `prompt + n_predict < 0.95 * pool`；命中时请求完全驻留 GPU，不建立 host mirror，prefill 跳过 capture/retrieval，日志 `KVMEM_SHORT_BYPASS tokens=...`。
+- **只要启用投机解码（MTP/DFlash），短路被禁用**：投机 decode 需要 target slot 映射，host mirror 不完整会触发 `no target slot`。代码见 17.4 与 25。
+- 因此两档行为不同：
+  - GSQ（MTP 默认开）：不走短路，短请求也走 KVMem 分页/检索路径；Agent 27.5-31.2 s，不是 23-24 s。
+  - Bonsai（无投机）：仍走短路，阈值为 Bonsai 池的 `0.95 * 34816 = 33075`；报告里的 23-24 s 是 Bonsai/无投机时代的数字。
+- 跨阈值（例如 8K 轮次接 40K）时，非投机 profile 会记录 `KVMEM_BYPASS_EXIT` 并整体重算一次，保证 host mirror 完整。
+- 结论：不要用 23-24 s 描述当前 GSQ 生产；当前 MTP 全开时短上下文收益来自 MTP，不来自短路。
 
 ### 2.4 前缀复用
 
@@ -164,7 +192,7 @@ set -a; . ./.env; set +a
 
 ## 3. 构建
 
-环境：V100 16 GB，CUDA 12.8，sm_70，24 线程。
+环境（本机实测）：V100 16 GB，CUDA 12.8.93（`/usr/local/cuda-12.8/bin/nvcc`），gcc 14.2.0，CMake 3.31.6，sm_70，24 线程。CUDA 12.9 是最后一个支持 sm_70 离线编译的 12.x；CUDA 13 不再支持 sm_70。构建环境和提交基线见 `ci/README.md`、`ci/check-env.sh`。
 
 ```bash
 cd $REPO
@@ -193,11 +221,11 @@ cmake -B build-sm70 -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=70 \
   -DLLAMA_BUILD_SERVER=ON -DGGML_NATIVE=ON
 cmake --build build-sm70 -j 12 --target llama-server
 
-# 2. 启动推理服务（14803，KVMem + 视觉 + TTL 1 天）
-export MODEL=$PWD/models/Ternary-Bonsai-2-27B-PTQ1_0.gguf
-export MMPROJ=$PWD/models/Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf
+# 2. 启动推理服务（14803，GSQ + MTP + 视觉 + TTL 1 天）
+export MODEL=$PWD/models/Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf
+export MMPROJ=$PWD/models/mmproj-Qwen3.8-27B-BF16.gguf
 export API_KEY=$(cat $API_KEY_FILE)
-nohup setsid $REPO/deploy/start-llama.sh > fused_prod.log 2>&1 &
+nohup setsid $REPO/deploy/start-llama-14803.sh 1 > fused_prod.log 2>&1 &
 
 # 3. 启动代理（14802，公网入口）
 cd $REPO/deploy
@@ -221,15 +249,15 @@ curl -s http://127.0.0.1:14802/v1/chat/completions \
 
 ### 4.1 生产启动
 
-`$REPO/deploy/start-llama.sh`：
+`$REPO/deploy/start-llama-14803.sh [1|2]`（或通用 `deploy/start-llama.sh`）：
 
 环境变量（必需）：`MODEL`、`MMPROJ`、`API_KEY`；可选：`PORT`（14803）、`CTX`（262144）、`KV_BUDGET`（6144）、`KV_GEN_RESERVE`（34816）、`KV_TTL`（86400）、`THREADS`（24）、`LLAMA_BIN`。
 
 ```bash
-export MODEL=/path/to/Ternary-Bonsai-2-27B-PTQ1_0.gguf
-export MMPROJ=/path/to/Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf
+export MODEL=/path/to/Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf
+export MMPROJ=/path/to/mmproj-Qwen3.8-27B-BF16.gguf
 export API_KEY=$(cat $API_KEY_FILE)
-$REPO/deploy/start-llama.sh
+$REPO/deploy/start-llama-14803.sh 1   # 2 = Bonsai
 ```
 
 ### 4.2 代理
@@ -264,14 +292,14 @@ python3 docs/kvmem-prism/scripts/test_vision.py --port 14802 --key "$KEY" \
 ```bash
 pgrep -a -x llama-server                 # 生产进程
 kill -9 <pid>                            # SIGTERM 有处理器；卡住时用 -9
-nohup setsid $REPO/deploy/start-llama.sh \
+nohup setsid $REPO/deploy/start-llama-14803.sh 1 \
   > fused_prod.log 2>&1 &
 
 curl -H "Authorization: Bearer $API_KEY" \
   http://127.0.0.1:14803/health      # 期望 200
 curl -H "Authorization: Bearer $API_KEY" \
   http://127.0.0.1:14802/health      # 期望 200
-nvidia-smi --query-gpu=memory.used --format=csv,noheader   # 期望 9-10 GB
+nvidia-smi --query-gpu=memory.used --format=csv,noheader   # GSQ 约 13-14.5 GiB；Bonsai 约 9-10 GiB
 ```
 
 ### 4.5 回滚
@@ -304,9 +332,9 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 
 ## 5. 参数选型
 
-> 下表的「默认」是生产脚本 `deploy/start-llama.sh` 的取值；程序内置默认见 `--help`（例如 `--kvmem-budget` 程序默认 32768，生产用 12288）。
+> 5.1/5.2 是 Bonsai 时代的池扫描历史数据，不能当作当前 GSQ 生产值；当前 GSQ 分档见 5.3。程序内置默认见 `--help`（例如 `--kvmem-budget` 程序默认 32768）。
 
-### 5.1 budget 扫描（128K 请求，16 GB 卡）
+### 5.1 budget 扫描（128K 请求，16 GB 卡；Bonsai 时代历史数据）
 
 | budget | 启动显存 | 128K 峰值 | 128K prefill / decode | 短路实测 |
 |---|---|---|---|---|
@@ -319,7 +347,7 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 
 结论：显存在 16 GB 内不是瓶颈，**池越大长文 prefill 越慢**（换页收缩后的注意力窗口 = 池大小）。
 
-### 5.2 14 GB 池实验（按每 GB 收益 5% 规则否决）
+### 5.2 14 GB 池实验（Bonsai 时代历史数据，按每 GB 收益 5% 规则否决）
 
 | 池大小 | 启动 | 峰值 | 128K prefill/decode | 256K prefill/decode |
 |---|---|---|---|---|
@@ -330,24 +358,30 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 
 9.3 GB -> 14.4 GB 显存增加 5.1 GB，长文 prefill 反而下降 32-42%，负相关，按规则放弃。
 
-### 5.3 最终配置
+### 5.3 当前配置（GSQ / Bonsai 分档）
 
-`--kvmem-budget 12288 --kvmem-gen-reserve 22528`（池 34816，短路阈值 33075）：
-32K 以内全走原生快速路径，128K/256K 保留 KVMem 换页，显存 9.3-9.9 GB，留 6 GB 余量。
+GSQ（当前生产默认，MTP 开启）：
 
-跨阈值场景（8K -> 40K -> 8K）：8.9 s -> 63.1 s（`KVMEM_BYPASS_EXIT` 整体重算）-> 9.3 s，行为正常。
+| profile | KVMem 池 | 用途 | 实测 |
+|---|---|---|---|
+| `default` | 6144 + 34816 | 全注意力，23K+ 长输出 | 128K decode 57.8；256K decode 57.0 |
+| `fast` | 4096 + 12288 | window 2048，日常短对话 | 128K decode 约 52 |
+| `256k` | 8192 + 4096 | 256K 精确档 | 约 34 tok/s，输出上限约 4K |
 
+Bonsai（legacy，无投机）：`--kvmem-budget 12288 --kvmem-gen-reserve 22528`（池 34816，短路阈值 33075），decode 约 34-35 tok/s。
+
+跨阈值场景（8K -> 40K -> 8K）只在无投机的 Bonsai 档出现 `KVMEM_BYPASS_EXIT` 整体重算；GSQ 因 MTP 禁用短路，不走该路径。
 
 ### 5.4 KVMem 参数（程序默认 vs 生产脚本）
 
 | 参数 | 程序默认 | 生产值 | 说明 |
 |---|---|---|---|
 | `--kvmem` | off | on | 启用适配器 |
-| `--kvmem-budget` | 32768 | 12288 | GPU 工作集 |
-| `--kvmem-gen-reserve` | 1024 | 22528 | 生成预留 |
+| `--kvmem-budget` | 32768 | 6144（GSQ）/ 12288（Bonsai） | GPU 工作集 |
+| `--kvmem-gen-reserve` | 1024 | 34816（GSQ）/ 22528（Bonsai） | 生成预留 |
 | `--kvmem-block-tokens` | 32 | 32 | 块大小 |
 | `--kvmem-sink-tokens` | 0 | 0 | 固定保留前缀 |
-| `--kvmem-recent-tokens` | 64 | 64 | 固定保留后缀 |
+| `--kvmem-recent-tokens` | 64 | 4096（MTP window 生效） | 固定保留后缀 |
 | `--kvmem-method` | retrieval | retrieval | retrieval/recency |
 | `--kvmem-host-mib` | 0 | 0 | host KV 配额，0 不限 |
 | `--kvmem-cpu-gb` | 0 | 0 | CPU spill，0 关 |
@@ -355,7 +389,7 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 | `--kvmem-query-max-tokens` | 512 | 512 | 检索 query 上限 |
 | `--kvmem-idle-ttl` | 86400 | 86400 | 空闲清理秒数，0 禁用 |
 
-`harvest_v` 与 `mtp_state` 仍只在 adapter 内部使用，没有 CLI；MTP/投机解码与 KVMem 同时启用会在启动时被拒绝。
+`harvest_v` 与 `mtp_state` 仍只在 adapter 内部使用，没有 CLI；MTP 与 KVMem 可同时启用，但必须保留 draft window（`--spec-draft-window 4096`，见第 25 节）。
 
 ## 6. 极限上下文实测（收口）
 
@@ -453,7 +487,7 @@ OOM 兜底（同一提交）：
 
 - GPU 只有一个实例：16 GB 放不下 14803 + 14805 同时运行，灰度/对比需要停生产窗口。
 - `--cache-reuse` 对 KVMem 自动禁用；多轮收益依赖 prompt 前缀复用。
-- 短路阈值以上（>33075）的请求走 KVMem 换页，8 轮 Agent 若单轮上下文超过 33K 会退回非短路路径，每轮多约 1.2 s。
+- 短路阈值以上（Bonsai >33075；GSQ MTP 启用时不走短路）的请求走 KVMem 换页，8 轮 Agent 若单轮上下文超过阈值会退回非短路路径。
 - M-RoPE 图像批次仍会打印 `find_slot: non-consecutive token position ...`（2D 位置本身非连续，属上游行为），不影响正确性。
 - 256K 在池 >34816 时会明显变慢；需要长文速度时保持当前配置。
 - server 注册了 SIGTERM 处理器；若进程卡在 decode，仍需 `kill -9`。
@@ -579,7 +613,7 @@ b9620c5 server : stop generation when the client disconnects
 | `repro_multimodal_reuse.py` | 图像请求后文本前缀复用（hole 回归；位置参数 port key，图片用 IMAGE_FILE） |
 | `deploy/start-llama.sh` | 通用启动（env：MODEL/MMPROJ/API_KEY） |
 | `deploy/start-llama-14803.sh` | 1/2 模型切换 + KV_PROFILE + taskset |
-| `deploy/quickstart.sh` | 一键安装/下载/启动（Release 资产） |
+| `deploy/quickstart.sh` | 源码构建/下载模型/启动（需 KVMEM_ROOT） |
 | `deploy/start-llama-prism.sh` | 回滚：无 KVMem/视觉，131072 ctx |
 | `deploy/trim_proxy.mjs` | 14802 代理（断连中止、tool 裁剪、灰度预留） |
 | `deploy/download-models.sh` | 从 Hugging Face 下载模型与视觉塔 |
@@ -741,7 +775,7 @@ git push -u origin clean-main     # 分支名按需修改
 
 - 模型：`Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf`（含 nextn MTP head）+ `mmproj-Qwen3.8-27B-BF16.gguf`
 - `--spec-type draft-mtp --spec-draft-n-max 2 --spec-draft-window 4096`；`--cache-type-k q8_0 --cache-type-v q8_0`
-- `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 34816`（池 40960，短路阈值 38912）
+- `--kvmem --kvmem-budget 6144 --kvmem-gen-reserve 34816`（池 40960；0.95 高水位 38912，但 MTP 启用时不走短路）
 - 启动：`deploy/start-llama-14803.sh 1`（或 `KV_PROFILE=fast|256k`）
 - `--reasoning on` 全程保留；`-c 262144 -fa on -ub 1024 -b 4096`
 - 回滚：`cp /srv/llama_agent/start-llama-14803.sh.bak-qwen38 /srv/llama_agent/start-llama-14803.sh`
@@ -807,7 +841,7 @@ DRY_RUN=1 API_KEY=x ./deploy/start-llama-14803.sh 1
 
 ### 18.2 公开一键脚本
 
-`deploy/quickstart.sh`（Release 资产同名）支持 1/2 选择、交互菜单、`bash -s -- N` 与 `MODEL_CHOICE`；GSQ 档支持 `KV_PROFILE=fast|256k|default`，默认 `--spec-draft-window 4096`、池 6144/34816、q8_0 KV；可用 `CPUSET` 绑定 CPU。模型缺失时从 Hugging Face 下载，`/srv/models` 已有文件时直接复用。
+`deploy/quickstart.sh` 支持 1/2 选择、交互菜单、`./quickstart.sh N` 与 `MODEL_CHOICE`；GSQ 档支持 `KV_PROFILE=fast|256k|default`，默认 `--spec-draft-window 4096`、池 6144/34816、q8_0 KV；可用 `CPUSET` 绑定 CPU。脚本从源码构建（必须设置 `KVMEM_ROOT`），不再下载预编译二进制；模型缺失时从 Hugging Face 下载，`/srv/models` 已有文件时直接复用。
 
 ### 17.4 长输出中断修复（2026-11-15）
 
@@ -1033,3 +1067,21 @@ SIGSEGV at 0x0
 ### 生产
 
 `start-llama-14803.sh` 已加入 `--spec-draft-window 4096`，保持原版全注意力（池 40960）。14803/14802 均 200，显存约 14.0 GiB。
+
+## 26. 正确性基线（2026-11-18）
+
+KVMem 稀疏选页、IQ3 量化、MTP 三层都可能改变输出，因此固定跑一组小门禁：
+
+```bash
+KEY=$(cat /path/to/api_key.txt)
+python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:14802 --key "$KEY"
+```
+
+| 测试 | 内容 | 结果 |
+|---|---|---|
+| greedy_repeat | 同一 prompt、temperature=0、cache_prompt=false 连跑两次，比较完整输出 | PASS（逐字相同） |
+| arithmetic | 17 红球 / 9 蓝球，问红球数量 | PASS |
+| needle | 约 38K prompt，首/中/尾三个暗号 | PASS 3/3（prompt 38057，77.0 s） |
+
+注意：greedy 逐字一致只在同一服务、同一硬件、相同 batch 形状下作为回归信号；GPU 调度变化可能造成非确定性，失败时应先复跑再判断。
+
