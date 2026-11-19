@@ -156,11 +156,13 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 
 | 项目 | 值 |
 |---|---|
+| 场景 | 合成夹具边界回归；14805 直连，非生产对话 |
 | prompt | 41,377 |
-| 输出 | 2,000 |
+| 输出 | 2,000（`ignore_eos`） |
 | 总 token | 43,376 |
 | coverage gap / Context size / no target slot | 0 |
-| decode | 68.2 tok/s |
+| draft acceptance | 93.5%（合成文本偏高） |
+| decode | 68.2 tok/s（仅证明未中断，不是生产基准） |
 | 服务 | 14803/14802 均 200 |
 
-该测试跨过原故障点（约 41,530），验证修复后池边界不再中断请求。
+该测试跨过原故障点（约 41,530），验证修复后池边界不再中断请求。68.2 受合成文本高 draft 接受率影响，不能与生产 57 t/s 直接比较。
