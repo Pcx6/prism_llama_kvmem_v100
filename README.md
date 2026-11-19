@@ -761,4 +761,4 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 - `NativeBackend::snapshot()` 遇到不完整 resident 块时，若 host packed 完整，降级该块并释放 GPU slot，让下一个 plan 重新 stage in，而不是中断整个请求。
 - `propagate_query_scores()` 遇到 MTP accepted prefix 与 graph snapshot 不一致时，跳过 graph propagation、保留 raw query scores，避免整个 retrieval 失败。
 
-验证：41,377 prompt + 2,000 输出 = 43,376 token，无 gap/context/slot 错误，decode 68.2 t/s；生产 14803/14802 均 200。
+验证：41,377 prompt + 2,000 输出 = 43,376 token，无 gap/context/slot 错误。该测试是合成夹具边界回归（14805 直连、`ignore_eos`、draft 接受率 93.5%），decode 68.2 仅用于确认请求未中断，不是生产基准；生产对话约 57 t/s。14803/14802 均 200。
