@@ -18,18 +18,26 @@ index b6f2c12..0a31486 100644
      double total = 0;
      std::unordered_set<uint64_t> seen;
 diff --git a/src/kvmem-root/src/adapter/llama-memory-kvmem.cpp b/src/kvmem-root/src/adapter/llama-memory-kvmem.cpp
-index 218ebbb..b9417b9 100644
+index 218ebbb..f593e41 100644
 --- a/src/kvmem-root/src/adapter/llama-memory-kvmem.cpp
 +++ b/src/kvmem-root/src/adapter/llama-memory-kvmem.cpp
-@@ -5875,8 +5875,19 @@ struct llama_memory_kvmem::NativeBackend final : kvmem::MemoryBackend {
+@@ -5875,8 +5875,27 @@ struct llama_memory_kvmem::NativeBackend final : kvmem::MemoryBackend {
              result.blocks.push_back({b, owner.packed_complete((uint32_t) id, b.valid_tokens) ? b.content_version : 0});
              const auto & physical = owner.store().blocks().at((size_t) id);
              if (physical.gpu_slot >= 0 && physical.tier == kvmem::KvTier::GPU && !physical.in_flight) {
 -                if (!owner.native_cells_complete(b))
 -                    throw kvmem::MemoryError(kvmem::MemoryErrorCode::Stale, "resident KV has a position/coverage gap");
 +                if (!owner.native_cells_complete(b)) {
-+                    if (!owner.packed_complete((uint32_t) id, b.valid_tokens))
-+                        throw kvmem::MemoryError(kvmem::MemoryErrorCode::Stale, "resident KV has a position/coverage gap and no host copy");
++                    if (!owner.packed_complete((uint32_t) id, b.valid_tokens)) {
++                        // No host copy: the block cannot be restaged. Drop the corrupt
++                        // resident tail block instead of aborting the request; it is a
++                        // partial MTP block and its KV cells are already incomplete.
++                        kvmem_diag("KVMEM_DROP_INCOMPLETE block=%u valid=%u\n", id, b.valid_tokens);
++                        const int32_t slot = physical.gpu_slot;
++                        owner.runtime_->store().set_block_tier((uint32_t) id, kvmem::KvTier::CPU, -1, -1);
++                        owner.free_slot(slot);
++                        continue;
++                    }
 +                    // Drop the corrupt GPU copy and let the next plan restage it from the
 +                    // complete host payload. Aborting the request here is what caused the
 +                    // 40K context boundary failures.
