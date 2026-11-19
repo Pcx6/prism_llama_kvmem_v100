@@ -1,6 +1,6 @@
 # Prism KVMem Benchmark (V100 16 GB)
 
-最后更新：2026-11-18。所有数字都是本机实测，单位 tok/s；未注明时均为 **decode**，prefill 会单独标注。
+最后更新：2026-11-19。所有数字都是本机实测，单位 tok/s；未注明时均为 **decode**，prefill 会单独标注。
 
 ## 1. 测试环境
 
@@ -149,3 +149,18 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 - 切换 prompt 时显式 cache_prompt=false，避免复用上一个长前缀。
 - 长时间生成会改变 resident 工作集，decode 会随生成长度变化；表中长输出项已注明。
 - 所有数字受 GPU 功耗墙、时钟和后台负载影响，比较时保持同一环境。
+
+## 7. 40K 池边界回归（2026-11-19）
+
+修复前的故障：总 token 接近 40960 时 `prepare_working_set` 报 `resident KV has a position/coverage gap`，随后 `Context size has been exceeded`。补丁见 `patches/kvmem-40k-gap.patch`。
+
+| 项目 | 值 |
+|---|---|
+| prompt | 41,377 |
+| 输出 | 2,000 |
+| 总 token | 43,376 |
+| coverage gap / Context size / no target slot | 0 |
+| decode | 68.2 tok/s |
+| 服务 | 14803/14802 均 200 |
+
+该测试跨过原故障点（约 41,530），验证修复后池边界不再中断请求。
