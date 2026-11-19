@@ -176,6 +176,8 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 
 “128K”是夹具名 `bench_128k.py` 的标称档位；当前 GSQ 实测 prompt 为 **106254** token，不是 131072。历史 Bonsai 表里出现过 131K prompt，属旧夹具。当前“250K/256K”实测为 261503 token。
 
+这里的“全注意力”指**不启用滑动窗口/窗口档**，但仍经 KVMem 选页：decode 只 attend resident 工作集，不是每 token 扫描全部 250K KV。
+
 `2.1-2.2 GiB`（4.6 节）指 Bonsai 池 34816 × 64 KiB，`2.5 GiB`（1.1 节）指 GSQ 池 40960 × 64 KiB；两者是不同 profile。同理，`9-10 GB` 是 Bonsai 显存，`13.5/14.8 GiB` 是 GSQ 显存。8 轮 Agent 的 `34.0 → 23-24 s` 是 Bonsai/无投机历史，`27.5-31.2 s` 是当前 GSQ MTP 值。
 
 ### 1.4 速度数字索引（每条都带条件）
@@ -376,7 +378,7 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 - 实测释放：64K 会话 RSS 5.63 GB -> 1.27 GB（TTL=5 s）；250K 会话 17.96 GB -> 1.33 GB（TTL=10 s）。
 - OOM 兜底：`MemAvailable < 1.5 GB` 或 GPU free < **256 MiB** 时强制清理 IDLE slot（`reason=oom_guard`）；decode 分配失败时清理并重试一次（`reason=oom_retry`）。
 - 注意：V100 上生产池正常运行时 GPU free 常低于 1 GB；旧阈值 1 GB 会在每次请求后约 3 秒误判 OOM、清空 idle slot，导致工具调用之间 prefix cache 全丢。现阈值改为 256 MiB，只在真正接近 OOM 时清理。
-- 说明：GPU KV 池是启动时固定分配（约 2.1-2.2 GB），TTL 释放的是池内行和主机内存，不会把池显存归还驱动。
+- 说明：GPU KV 池是启动时固定分配（Bonsai 约 2.1 GiB，GSQ 约 2.5 GiB，按 profile 变），TTL 释放的是池内行和主机内存，不会把池显存归还驱动。
 
 
 ## 5. 参数选型
@@ -761,4 +763,4 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 - `NativeBackend::snapshot()` 遇到不完整 resident 块时，若 host packed 完整，降级该块并释放 GPU slot，让下一个 plan 重新 stage in，而不是中断整个请求。
 - `propagate_query_scores()` 遇到 MTP accepted prefix 与 graph snapshot 不一致时，跳过 graph propagation、保留 raw query scores，避免整个 retrieval 失败。
 
-验证：41,377 prompt + 2,000 输出 = 43,376 token，无 gap/context/slot 错误。该测试是合成夹具边界回归（14805 直连、`ignore_eos`、draft 接受率 93.5%），decode 68.2 仅用于确认请求未中断，不是生产基准；生产对话约 57 t/s。14803/14802 均 200。
+验证：41,377 prompt + 2,000 输出，服务端 `n_tokens=43,376`（末 token 计数约定），无 gap/context/slot 错误。该测试是合成夹具边界回归（14805 直连、`ignore_eos`、draft 接受率 93.5%），decode 68.2 仅用于确认请求未中断，不是生产基准；生产对话约 57 t/s。14803/14802 均 200。
