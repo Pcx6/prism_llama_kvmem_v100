@@ -752,3 +752,13 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 
 注意：greedy 逐字一致只在同一服务、同一硬件、相同 batch 形状下作为回归信号；GPU 调度变化可能造成非确定性，失败时应先复跑再判断。
 
+## 27. KVMem 40K 边界修复（2026-11-19）
+
+现象：对话总 token 接近 40960 时，`prepare_working_set` 报 `resident KV has a position/coverage gap`，随后 `Context size has been exceeded`，流中断；下一个请求重新 prefill 后 MTP 恢复，速度从 34 变 56。
+
+修复（adapter 外部源码，补丁见 `patches/kvmem-40k-gap.patch`）：
+
+- `NativeBackend::snapshot()` 遇到不完整 resident 块时，若 host packed 完整，降级该块并释放 GPU slot，让下一个 plan 重新 stage in，而不是中断整个请求。
+- `propagate_query_scores()` 遇到 MTP accepted prefix 与 graph snapshot 不一致时，跳过 graph propagation、保留 raw query scores，避免整个 retrieval 失败。
+
+验证：41,377 prompt + 2,000 输出 = 43,376 token，无 gap/context/slot 错误，decode 68.2 t/s；生产 14803/14802 均 200。
