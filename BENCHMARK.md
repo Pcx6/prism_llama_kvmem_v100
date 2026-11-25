@@ -166,3 +166,18 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 | 生产恢复 | 14803/14802 均 200（测试实例为 14805） |
 
 该测试跨过原故障点（约 41,530），验证修复后池边界不再中断请求。68.2 受合成文本高 draft 接受率影响，不能与生产 57 t/s 直接比较。
+
+## 8. 长上下文 MTP 回归（2026-11-25）
+
+测试 prompt 244,506 token（context 262144），max_tokens=128，MTP draft window 4096，q8_0 KV：
+
+| 项目 | 值 |
+|---|---|
+| prompt | 244,506 |
+| 输出 | 128 |
+| decode | 56.32 tok/s |
+| draft acceptance | 69.8% |
+| coverage gap / Context size / no target slot | 0 |
+| 生产 | 14803/14802 均 200 |
+
+该测试验证长上下文下 MTP 正常启动；244K 是 262144 context 内实际可用的 prompt 规模（chat 模板有额外 token）。
