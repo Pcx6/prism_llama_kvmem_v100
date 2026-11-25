@@ -763,5 +763,6 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 - `NativeBackend::snapshot()` 遇到不完整 resident 块时，若 host packed 完整，降级该块并释放 GPU slot，让下一个 plan 重新 stage in，而不是中断整个请求。
 - `propagate_query_scores()` 遇到 MTP accepted prefix 与 graph snapshot 不一致时，跳过 graph propagation、保留 raw query scores，避免整个 retrieval 失败。
 - 若 resident 块不完整且 host 副本也没有，丢弃该 partial MTP 尾部块并释放 slot，记录 `KVMEM_DROP_INCOMPLETE`，不再让整个请求报 `coverage gap and no host copy`。
+- 新请求比缓存 prompt 短时（分支/重试/新会话），强制清空 slot KV 再 prefill，避免旧的长尾位置残留；测试 5,083 -> 5,052 正常。
 
-验证：41,377 prompt + 2,000 输出，服务端 `n_tokens=43,376`（末 token 计数约定），无 gap/context/slot 错误。该测试是合成夹具边界回归（14805 直连、`ignore_eos`、draft 接受率 93.5%），decode 68.2 仅用于确认请求未中断，不是生产基准；生产对话约 57 t/s。14803/14802 均 200。
+验证：41,377 prompt + 2,000 输出，服务端 `n_tokens=43,376`（末 token 计数约定），无 gap/context/slot 错误。 2026-11-25 长上下文回归：244,506 prompt + 128 输出，MTP draft 69.8%，decode 56.32 t/s，无 coverage/context 错误（context 262144）。该测试是合成夹具边界回归（14805 直连、`ignore_eos`、draft 接受率 93.5%），decode 68.2 仅用于确认请求未中断，不是生产基准；生产对话约 57 t/s。14803/14802 均 200。
