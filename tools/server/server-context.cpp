@@ -3417,6 +3417,18 @@ private:
                                 n_past = 0;
                             }
 
+                            // A new prompt shorter than the cached one is not an extension of
+                            // the same conversation (branch/retry/new chat). KVMem cannot
+                            // reliably truncate a long scattered tail with seq_rm, so clear
+                            // the slot and prefill from zero instead of appending at a stale
+                            // position (this caused 30K prompts after a 129K turn to fail).
+                            if (n_past > 0 && slot.task->n_tokens() < slot.prompt.n_tokens()) {
+                                SLT_WRN(slot, "prompt shrank %d -> %d, clearing KV before prefill\n",
+                                        (int) slot.prompt.n_tokens(), slot.task->n_tokens());
+                                slot.prompt_clear();
+                                n_past = 0;
+                            }
+
                             llama_pos pos_next = slot.prompt.tokens.pos_next(n_past);
 
                             // ref: https://github.com/ggml-org/llama.cpp/pull/24110
