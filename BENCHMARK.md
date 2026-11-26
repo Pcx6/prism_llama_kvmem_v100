@@ -26,9 +26,10 @@ decode 与 prefill 是不同指标，不能混用。“128K”是 `bench_128k.py
 |---|---|---|---|---|---|---|---|
 | GSQ default | decode 51.4 | 冷 | 2K | on | 未记录 | source-only | 1 |
 | GSQ default | decode 50.8 | 冷 | 16K | on | 未记录 | source-only | 1 |
-| GSQ default | decode 57.8 | 冷 | 106K | on | 未记录 | source-only | 1 |
-| GSQ default | decode 57.0 | 冷 | 261K | on | 未记录 | source-only | 1 |
+| GSQ default | decode 57.8（旧 6K） | 冷 | 106K | on | 未记录 | source-only | 1 |
+| GSQ default | decode 57.0（旧 6K） | 冷 | 261K | on | 未记录 | source-only | 1 |
 | GSQ default | decode 34.2（修复前） | 冷 | 261K | off | 未记录 | source-only | 1 |
+| GSQ default | decode 48.39 | 冷 | 100K | on | 未记录 | source-only | 1 |
 | GSQ fast | decode 约 52 | 冷 | 106K | on | 未记录 | source-only | 1 |
 | Bonsai legacy | decode 34-35 | 冷 | 106K | off | 未记录 | source-only | 历史 |
 | GSQ default | prefill 549 | 冷 | 117K | on | 未记录 | source-only | 1 |
@@ -40,7 +41,7 @@ decode 与 prefill 是不同指标，不能混用。“128K”是 `bench_128k.py
 生产配置：
 
 ~~~bash
---kvmem --kvmem-budget 12288 --kvmem-gen-reserve 28672
+--kvmem --kvmem-budget 20480 --kvmem-gen-reserve 20480
 --spec-type draft-mtp --spec-draft-n-max 2 --spec-draft-window 4096
 --cache-type-k q8_0 --cache-type-v q8_0
 -c 262144 -fa on -ub 1024 -b 4096
@@ -57,7 +58,7 @@ decode 与 prefill 是不同指标，不能混用。“128K”是 `bench_128k.py
 | 250K | 261503 | 400.3 | **57.0** | 144/108 | 全注意力，三暗号 3/3 |
 | 250K，修复前 | 261503 | 588.9 | 34.2 | 0 | MTP draft 未生效；该 prefill 与 HISTORY 16.2 的 226K 数值相同，来源待核 TODO(maintainer) |
 
-106K/261K 质量行使用同一组暗号：`START-ULTRA-256`、`MIDDLE-ULTRA-256`（约 125K）、`END-ULTRA-256`；语料为 261503 token 合成文本。
+106K/261K 质量行使用同一组暗号：`START-ULTRA-256`、`MIDDLE-ULTRA-256`（约 125K）、`END-ULTRA-256`；语料为 261503 token 合成文本。表中 57.x 是旧 6K resident 基准；当前 20K resident 的 100K 实测为 48.39（第 9 节）。
 
 长文 prefill（单独标注，不是 decode）：
 
@@ -104,7 +105,7 @@ Bonsai 没有 MTP，decode 落在单 token GEMV 的 34-35 区间；短上下文�
 | **q8_0 / q8_0** | 591.1 | **33.98** | **3/3** | **14197 MiB** |
 | q4_0 / q8_0 | 629.3 | 32.53 | 3/3 | 14133 MiB |
 
-该组是 MTP 未生效时的 256K 全注意力对照，用于比较 KV 精度；不能和修复后的 57.0 混用。结论：量化不提升 decode，q4_0 反而更慢。
+该组是 MTP 未生效时的 256K 全注意力对照，用于比较 KV 精度；不能和旧 6K 档修复后的 57.0 混用。结论：量化不提升 decode，q4_0 反而更慢。
 
 ## 4. 检索 kv-window 扫描（约 85K prompt；不是 spec-draft-window）
 
@@ -187,8 +188,8 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 | budget / gen_reserve | 100K decode active KV | decode |
 |---|---|---|
 | 6144 / 34816 | 约 6.4K | 约 57（但代码上下文大量换出） |
-| 12288 / 28672 | 约 12K | 56.93 |
+| **20480 / 20480** | **约 20K** | **48.39（当前选择）** |
 | 16384 / 24576 | 约 16.6K | 49.96 |
 | 20480 / 20480 | 约 20.7K | 48.39 |
 
-100K 代码检索测试（代码在开头，问 `WIDGET_MAGIC`）在 6K 和 12K budget 下都能答对，但 6K 只保留少量代码片段；12K 是当前 50 t/s 约束下的折中。更大 active KV 会降到 50 t/s 以下。
+100K 代码检索测试（代码在开头，问 `WIDGET_MAGIC`）在 6K/12K/20K budget 下都能答对，但 6K 只保留少量代码片段；20K 是当前平衡点，代价是 decode 约 48 t/s。
