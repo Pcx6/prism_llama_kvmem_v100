@@ -40,7 +40,7 @@ decode 与 prefill 是不同指标，不能混用。“128K”是 `bench_128k.py
 生产配置：
 
 ~~~bash
---kvmem --kvmem-budget 6144 --kvmem-gen-reserve 34816
+--kvmem --kvmem-budget 12288 --kvmem-gen-reserve 28672
 --spec-type draft-mtp --spec-draft-n-max 2 --spec-draft-window 4096
 --cache-type-k q8_0 --cache-type-v q8_0
 -c 262144 -fa on -ub 1024 -b 4096
@@ -181,3 +181,14 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 | 生产 | 14803/14802 均 200 |
 
 该测试验证长上下文下 MTP 正常启动；244K 是 262144 context 内实际可用的 prompt 规模（chat 模板有额外 token）。
+
+## 9. 100K active KV 与降智（2026-11-26）
+
+| budget / gen_reserve | 100K decode active KV | decode |
+|---|---|---|
+| 6144 / 34816 | 约 6.4K | 约 57（但代码上下文大量换出） |
+| 12288 / 28672 | 约 12K | 56.93 |
+| 16384 / 24576 | 约 16.6K | 49.96 |
+| 20480 / 20480 | 约 20.7K | 48.39 |
+
+100K 代码检索测试（代码在开头，问 `WIDGET_MAGIC`）在 6K 和 12K budget 下都能答对，但 6K 只保留少量代码片段；12K 是当前 50 t/s 约束下的折中。更大 active KV 会降到 50 t/s 以下。
