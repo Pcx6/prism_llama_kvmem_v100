@@ -73,7 +73,7 @@ KVMEM_ROOT=/path/to/kvmem-root ./deploy/quickstart.sh 1
 | `API_KEY_FILE` | - | 存放 API_KEY 的文件路径（示例） |
 | `KVMEM_ROOT` | - | kvmem-root 源码路径（仅构建 KVMem 时） |
 | `PORT` / `CTX` | 14803 / 262144 | 监听端口 / 上下文 |
-| `KV_BUDGET` / `KV_GEN_RESERVE` | 12288 / 28672 | KVMem GPU 池（12K resident + 28K 输出） |
+| `KV_BUDGET` / `KV_GEN_RESERVE` | 20480 / 20480 | KVMem GPU 池（20K resident + 20K 输出） |
 | `KV_PROFILE` | default | `fast` / `256k` / `default` |
 | `CPUSET` | 0-11,24-35 | llama-server 的 CPU 绑定 |
 | `KV_TTL` | 86400 | 空闲 KV 清理秒数，0 禁用 |
@@ -128,12 +128,12 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 | 模型 | `/srv/models/Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf`（约 10.4 GB，qwen35 hybrid GDN + MTP head，262144 ctx） |
 | 视觉塔 | `/srv/models/mmproj-Qwen3.8-27B-BF16.gguf`（931 MB，GPU offload） |
 | API 名称 | `Qwen3.8-27B-GSQ-RCO-IQ3_XXS`（旧别名 `Bonsai-2-27B` 已停用） |
-| KVMem | `--kvmem-budget 12288 --kvmem-gen-reserve 28672`（池 40960 token，约 2.5 GiB） |
+| KVMem | `--kvmem-budget 20480 --kvmem-gen-reserve 20480`（池 40960 token，约 2.5 GiB） |
 | 投机解码 | `--spec-type draft-mtp --spec-draft-n-max 2 --spec-draft-window 4096` |
 | 短路 | 启用 MTP 时禁用原生短路（见 2.3、25 与 docs/HISTORY.md（17.4 已归档）） |
 | 显存 | 启动约 13.5 GiB；长输出峰值约 14.8 GiB / 16 GB |
 | 长文（**prefill** tok/s） | 117K 约 549；226K 约 488（不是 decode） |
-| 128K decode | 57.8 tok/s（名义 128K 夹具，prompt 106254；draft window 4096，draft 204/152） |
+| 100K decode | 约 48.4 tok/s（20K resident；旧 6K 档 57.8，名义 128K 夹具 prompt 106254） |
 | 短请求 decode | 2K prompt 1962 约 51.4 tok/s（当前 default；61.1 为历史调优档，见 1.4） |
 | 8 轮 Agent | 27.5-31.2 s（TTFT 17.9-21.2 s，后段 47-50 tok/s） |
 | 视觉 | OCR 正常（14802），TTFT 约 3.9-7.9 s |
@@ -166,8 +166,8 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 
 | 参数 | default（GSQ） | fast（GSQ） | 256k（GSQ） | Bonsai legacy |
 |---|---|---|---|---|
-| `KV_BUDGET` | 12288 | 4096 | 8192 | 12288 |
-| `KV_GEN_RESERVE` | 28672 | 12288 | 4096 | 22528 |
+| `KV_BUDGET` | 20480 | 4096 | 8192 | 12288 |
+| `KV_GEN_RESERVE` | 20480 | 12288 | 4096 | 22528 |
 | 池总量 | 40960 | 16384 | 12288 | 34816 |
 | `0.95 × 池` | 38912 | 15564.8 | 11673.6 | 33075 |
 | KV 池显存 | 2.5 GiB | 1.0 GiB | 0.75 GiB | 2.1 GiB |
@@ -189,7 +189,7 @@ KVMem adapter 不随仓库提供；`KVMEM_ROOT` 必须由使用者自备并确�
 | decode | 51.4 | 2K（prompt 1962） | GSQ default（MTP） | 冷 |
 | decode | 61.1 | 2K 短请求（输出 700，含思维链） | **历史调优档**（池 18432，非当前 default） | 冷 |
 | decode | 65.2 | 视觉 OCR（ctx TODO(maintainer)） | GSQ default（MTP） | 热/视觉请求 |
-| decode | 约 57 | 106K / 261K | GSQ default（draft window 4096） | 冷 |
+| decode | 约 48 | 100K（20K resident；旧 6K 档 57） | GSQ default（draft window 4096） | 冷 |
 | decode | 约 52 | 106K | GSQ fast（window 2048） | 冷 |
 | decode | 34-35 | 106K | Bonsai legacy / GSQ MTP 未生效 | 冷 |
 
@@ -301,7 +301,7 @@ curl -s http://127.0.0.1:14802/v1/chat/completions \
 
 `$REPO/deploy/start-llama-14803.sh [1|2]`（或通用 `deploy/start-llama.sh`）：
 
-环境变量（必需）：`MODEL`、`MMPROJ`、`API_KEY`；可选：`PORT`（14803）、`CTX`（262144）、`KV_BUDGET`（12288）、`KV_GEN_RESERVE`（28672）、`KV_TTL`（86400）、`THREADS`（24）、`LLAMA_BIN`。
+环境变量（必需）：`MODEL`、`MMPROJ`、`API_KEY`；可选：`PORT`（14803）、`CTX`（262144）、`KV_BUDGET`（20480）、`KV_GEN_RESERVE`（20480）、`KV_TTL`（86400）、`THREADS`（24）、`LLAMA_BIN`。
 
 ```bash
 export MODEL=/path/to/Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf
@@ -395,7 +395,7 @@ GSQ（当前生产默认，MTP 开启）：
 
 | profile | KVMem 池 | 用途 | 实测 |
 |---|---|---|---|
-| `default` | 12288 + 28672 | 全注意力，28K 输出 | 128K（106254）decode 57.8；256K（261503）decode 57.0 |
+| `default` | 20480 + 20480 | 全注意力，20K 输出 | 100K/106K decode 约 48；旧 6K 档 106K 57.8、250K 57.0 |
 | `fast` | 4096 + 12288 | window 2048，日常短对话 | 128K（106254）decode 约 52 |
 | `256k` | 8192 + 4096 | 256K 精确档 | 约 34 tok/s，输出上限约 4K |
 
@@ -408,8 +408,8 @@ Bonsai（legacy，无投机）：`--kvmem-budget 12288 --kvmem-gen-reserve 22528
 | 参数 | 程序默认 | 生产值 | 说明 |
 |---|---|---|---|
 | `--kvmem` | off | on | 启用适配器 |
-| `--kvmem-budget` | 32768 | 12288（GSQ）/ 12288（Bonsai） | GPU 工作集 |
-| `--kvmem-gen-reserve` | 1024 | 28672（GSQ）/ 22528（Bonsai） | 生成预留 |
+| `--kvmem-budget` | 32768 | 20480（GSQ）/ 12288（Bonsai） | GPU 工作集 |
+| `--kvmem-gen-reserve` | 1024 | 20480（GSQ）/ 22528（Bonsai） | 生成预留 |
 | `--kvmem-block-tokens` | 32 | 32 | 块大小 |
 | `--kvmem-sink-tokens` | 0 | 0 | 固定保留前缀 |
 | `--kvmem-recent-tokens` | 64 | 4096（MTP window 生效） | 固定保留后缀；即 `--spec-draft-window` 的 draft 尾部窗口，不是第 4 节 recency 的 `--kv-window` |
@@ -432,7 +432,7 @@ Bonsai（legacy，无投机）：`--kvmem-budget 12288 --kvmem-gen-reserve 22528
 - `--cache-reuse` 对 KVMem 自动禁用；多轮收益依赖 prompt 前缀复用。
 - 短路阈值以上（Bonsai >33075；GSQ MTP 启用时不走短路）的请求走 KVMem 换页，8 轮 Agent 若单轮上下文超过阈值会退回非短路路径。
 - M-RoPE 图像批次仍会打印 `find_slot: non-consecutive token position ...`（2D 位置本身非连续，属上游行为），不影响正确性。
-- 256K 速度取决于 resident 工作集；当前 GSQ default 池 40960 实测 decode 57.0（见 [BENCHMARK.md](BENCHMARK.md)）。历史池实验见 [docs/HISTORY.md](docs/HISTORY.md)。
+- 256K 速度取决于 resident 工作集；当前 20K resident 在 100K 约 48.4，旧 6K budget 在 250K 曾测 57.0（见 [BENCHMARK.md](BENCHMARK.md)）。历史池实验见 [docs/HISTORY.md](docs/HISTORY.md)。
 - server 注册了 SIGTERM 处理器；若进程卡在 decode，仍需 `kill -9`。
 - KV 空闲 TTL 默认 1 天，只清理 IDLE slot；GPU KV 池是固定分配，清理不回退池显存，只释放行与主机内存。
 - RAM prompt cache / 原生 checkpoint 在 KVMem 下被禁用（避免 store 与原生 KV 不一致），跨请求只有 slot 前缀复用。
@@ -617,14 +617,14 @@ python3 docs/kvmem-prism/scripts/test_vision.py --port 14802 --key "$KEY" \
 
 | 参数 | 模型 | 默认 KVMem 池 | 特性 |
 |---|---|---|---|
-| 1（默认） | Qwen3.8-27B GSQ IQ3_XXS-mtp + mmproj BF16 | 12288 + 28672 | MTP n-max 2 + draft window 4096、q8_0 KV、视觉、reasoning |
+| 1（默认） | Qwen3.8-27B GSQ IQ3_XXS-mtp + mmproj BF16 | 20480 + 20480 | MTP n-max 2 + draft window 4096、q8_0 KV、视觉、reasoning |
 | 2 | Ternary Bonsai 2 27B PTQ1_0 + mmproj Q8_0 | 12288 + 22528 | 无投机、视觉、reasoning |
 
 GSQ 档支持 `KV_PROFILE`：
 
 | KV_PROFILE | KVMem 池 | Decode | 用途 |
 |---|---|---|---|
-| `default` | 12288 + 28672 | 约 57 tok/s（修复后；34-35 为修复前对照） | 全注意力、23K+ 长输出 |
+| `default` | 20480 + 20480 | 约 48 tok/s（20K resident；旧 6K 档约 57） | 全注意力、20K 输出 |
 | `fast` | 4096 + 12288 | 约 52 tok/s | window 2048，日常对话 |
 | `256k` | 8192 + 4096 | 约 34 tok/s | 256K 精确档，输出上限约 4K |
 
@@ -644,7 +644,7 @@ DRY_RUN=1 API_KEY=x ./deploy/start-llama-14803.sh 1
 
 ### 18.2 公开一键脚本
 
-`deploy/quickstart.sh` 支持 1/2 选择、交互菜单、`./quickstart.sh N` 与 `MODEL_CHOICE`；GSQ 档支持 `KV_PROFILE=fast|256k|default`，默认 `--spec-draft-window 4096`、池 12288/28672、q8_0 KV；可用 `CPUSET` 绑定 CPU。脚本从源码构建（必须设置 `KVMEM_ROOT`），不再下载预编译二进制；模型缺失时从 Hugging Face 下载，`/srv/models` 已有文件时直接复用。
+`deploy/quickstart.sh` 支持 1/2 选择、交互菜单、`./quickstart.sh N` 与 `MODEL_CHOICE`；GSQ 档支持 `KV_PROFILE=fast|256k|default`，默认 `--spec-draft-window 4096`、池 20480/20480、q8_0 KV；可用 `CPUSET` 绑定 CPU。脚本从源码构建（必须设置 `KVMEM_ROOT`），不再下载预编译二进制；模型缺失时从 Hugging Face 下载，`/srv/models` 已有文件时直接复用。
 
 ## 19. 历史实验：128K Decode 调优（已归档）
 
@@ -726,8 +726,8 @@ DRY_RUN=1 API_KEY=x ./deploy/start-llama-14803.sh 1
 | 场景 | Decode tok/s | Draft | 质量 |
 |---|---|---|---|
 | 128K 全注意力，修复前 | 34.5 | 0 | 3/3 |
-| 128K 全注意力，`--spec-draft-window 4096` | **57.8** | 204/152 | 3/3 |
-| 250K 全注意力，`--spec-draft-window 4096` | **57.0** | 144/108 | 3/3（含 MIDDLE-ULTRA-256） |
+| 128K 全注意力，`--spec-draft-window 4096`（旧 6K 档） | **57.8** | 204/152 | 3/3 |
+| 250K 全注意力，`--spec-draft-window 4096`（旧 6K 档） | **57.0** | 144/108 | 3/3（含 MIDDLE-ULTRA-256） |
 | 16K 全注意力，默认 window | 50.8 | 51/36 | - |
 | 128K，window 2048 | 35.0 | 0 | - |
 
@@ -765,7 +765,7 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 - 若 resident 块不完整且 host 副本也没有，丢弃该 partial MTP 尾部块并释放 slot，记录 `KVMEM_DROP_INCOMPLETE`，不再让整个请求报 `coverage gap and no host copy`。
 - 新请求比缓存 prompt 短时（分支/重试/新会话），强制清空 slot KV 再 prefill，避免旧的长尾位置残留；测试 5,083 -> 5,052 正常。
 
-验证：41,377 prompt + 2,000 输出，服务端 `n_tokens=43,376`（末 token 计数约定），无 gap/context/slot 错误。 2026-11-25 长上下文回归：244,506 prompt + 128 输出，MTP draft 69.8%，decode 56.32 t/s，无 coverage/context 错误（context 262144）。该测试是合成夹具边界回归（14805 直连、`ignore_eos`、draft 接受率 93.5%），decode 68.2 仅用于确认请求未中断，不是生产基准；生产对话约 57 t/s。14803/14802 均 200。
+验证：41,377 prompt + 2,000 输出，服务端 `n_tokens=43,376`（末 token 计数约定），无 gap/context/slot 错误。 2026-11-25 长上下文回归：244,506 prompt + 128 输出，MTP draft 69.8%，decode 56.32 t/s，无 coverage/context 错误（context 262144）。该测试是合成夹具边界回归（14805 直连、`ignore_eos`、draft 接受率 93.5%），decode 68.2 仅用于确认请求未中断，不是生产基准；生产 20K resident 约 48 t/s（旧 6K 档约 57）。14803/14802 均 200。
 
 ## 28. 100K 降智根因（2026-11-26）
 
@@ -773,8 +773,8 @@ python3 docs/kvmem-prism/scripts/verify_correctness.py --base http://127.0.0.1:1
 
 - 旧生产 `--kvmem-budget 6144 --kvmem-gen-reserve 34816`；`KVMEM_TRACE` 在 100K decode 时显示 `n_kv=6400 keep=6168`，即模型实际只 attend 约 6.4K KV，不是 40,960 池全量。
 - 100K 代码任务里，前面的代码块会随对话增长被换出；模型只能看到最近/检索到的少量片段，表现就像“降智”。
-- 将 budget 调为 **12288 + 28672**（池仍 40960）后，100K prompt 实测 decode **56.93 t/s**，active KV 约 12K，代码开头的 `WIDGET_MAGIC` 仍能正确检索。
+- 将 budget 调为 **20480 + 20480**（池仍 40960）后，100K prompt 实测 decode **48.39 t/s**，active KV 约 20K，代码开头的 `WIDGET_MAGIC` 仍能正确检索。
 
-但这不能把 100K 全部放进 16 GB：12K 仍是检索式工作集。模型本身是 IQ3_XXS（3-bit）+ q8_0 KV，社区对 Q6/Q8 的实测显示 100K-130K 开始退化、Q8 可稳定到 240K；因此长上下文仍有模型/量化因素，不能全部归因于框架。
+但这不能把 100K 全部放进 16 GB：20K 仍是检索式工作集。模型本身是 IQ3_XXS（3-bit）+ q8_0 KV，社区对 Q6/Q8 的实测显示 100K-130K 开始退化、Q8 可稳定到 240K；因此长上下文仍有模型/量化因素，不能全部归因于框架。
 
 结论：**主因是 KVMem 的 resident budget 配得太小（6K），不是 40K 池全部可用；量化在 100K 附近会放大退化。**
