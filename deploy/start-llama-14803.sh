@@ -42,8 +42,8 @@ case "$CHOICE" in
       KV=(--kvmem-budget 8192 --kvmem-gen-reserve 4096)
       KVPOL=()
     else
-      # full attention, 12K resident + 28K output
-      KV=(--kvmem-budget 12288 --kvmem-gen-reserve 28672)
+      # full attention, 20K resident + 20K output
+      KV=(--kvmem-budget 20480 --kvmem-gen-reserve 20480)
       KVPOL=()
     fi
     ;;
