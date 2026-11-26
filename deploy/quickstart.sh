@@ -47,7 +47,7 @@ case "$CHOICE" in
     MODEL_FILE="Qwen3.8-27B-GSQ-RCO-IQ3_XXS-mtp.gguf"
     MMPROJ_FILE="mmproj-Qwen3.8-27B-BF16.gguf"
     ALIAS="Qwen3.8-27B-GSQ-RCO-IQ3_XXS"
-    KV_BUDGET=12288; KV_GEN=28672
+    KV_BUDGET=20480; KV_GEN=20480
     KVPOL=()
     EXTRA=(--spec-type draft-mtp --spec-draft-n-max 2 --spec-draft-window 4096 --cache-type-k q8_0 --cache-type-v q8_0)
     case "$KV_PROFILE" in
